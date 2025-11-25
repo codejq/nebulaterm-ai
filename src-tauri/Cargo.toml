@@ -1,6 +1,6 @@
 [package]
 name = "nebulaterm-ai"
-version = "1.0.13"
+version = "1.0.12"
 description = "NebulaTerm AI"
 authors = ["you"]
 edition = "2021"

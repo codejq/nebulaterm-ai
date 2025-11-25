@@ -18,11 +18,11 @@ It is designed to be cross-platform (Windows, Linux, macOS) and features a unifi
 
 ## Download
 
-Download the latest version (v1.0.13) for your operating system:
+Download the latest version (v1.0.12) for your operating system:
 
 ### Windows
 
-**[Download for Windows](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.13/NebulaTerm-AI_1.0.13_x64-setup.exe)** (64-bit)
+**[Download for Windows](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.12/NebulaTerm-AI_1.0.12_x64-setup.exe)** (64-bit)
 
 1. Click the link above to download the installer
 2. Run the downloaded `.exe` file
@@ -31,14 +31,14 @@ Download the latest version (v1.0.13) for your operating system:
 
 ### macOS
 
-**[Download for macOS (Apple Silicon)](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.13/NebulaTerm-AI_1.0.13_aarch64.dmg)** (M1/M2/M3)
+**[Download for macOS (Apple Silicon)](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.12/NebulaTerm-AI_1.0.12_aarch64.dmg)** (M1/M2/M3)
 
 1. Click the link above to download the disk image
 2. Open the downloaded `.dmg` file
 3. Drag the NebulaTerm AI app to your Applications folder
 4. Launch from Applications (you may need to allow it in System Preferences → Security & Privacy)
 
-**Alternative**: [macOS Portable Version](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.13/NebulaTerm-AI_aarch64.app.tar.gz) (.tar.gz)
+**Alternative**: [macOS Portable Version](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.12/NebulaTerm-AI_aarch64.app.tar.gz) (.tar.gz)
 
 ### Linux
 
@@ -46,34 +46,34 @@ Choose the format that works best for your Linux distribution:
 
 #### Ubuntu/Debian (DEB Package)
 
-**[Download .deb](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.13/nebula-term-ai_1.0.13_amd64.deb)**
+**[Download .deb](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.12/nebula-term-ai_1.0.12_amd64.deb)**
 
 ```bash
 # Download and install
-sudo dpkg -i nebula-term-ai_1.0.13_amd64.deb
+sudo dpkg -i nebula-term-ai_1.0.12_amd64.deb
 # If you get dependency errors, run:
 sudo apt-get install -f
 ```
 
 #### Fedora/RHEL/CentOS (RPM Package)
 
-**[Download .rpm](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.13/nebula-term-ai-1.0.13-1.x86_64.rpm)**
+**[Download .rpm](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.12/nebula-term-ai-1.0.12-1.x86_64.rpm)**
 
 ```bash
 # Download and install
-sudo rpm -i nebula-term-ai-1.0.13-1.x86_64.rpm
+sudo rpm -i nebula-term-ai-1.0.12-1.x86_64.rpm
 # Or use dnf:
-sudo dnf install nebula-term-ai-1.0.13-1.x86_64.rpm
+sudo dnf install nebula-term-ai-1.0.12-1.x86_64.rpm
 ```
 
 #### Universal Linux (AppImage)
 
-**[Download AppImage](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.13/nebula-term-ai_1.0.13_amd64.AppImage)** (Works on any Linux distribution)
+**[Download AppImage](https://github.com/codejq/nebulaterm-ai/releases/download/v1.0.12/nebula-term-ai_1.0.12_amd64.AppImage)** (Works on any Linux distribution)
 
 ```bash
 # Download, make executable, and run
-chmod +x nebula-term-ai_1.0.13_amd64.AppImage
-./nebula-term-ai_1.0.13_amd64.AppImage
+chmod +x nebula-term-ai_1.0.12_amd64.AppImage
+./nebula-term-ai_1.0.12_amd64.AppImage
 ```
 
 ---
