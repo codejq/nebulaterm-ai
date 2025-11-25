@@ -6,66 +6,7 @@ on:
       - 'v*'
 
 jobs:
-  create-release:
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    outputs:
-      release_id: ${{ steps.create-release.outputs.result }}
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Get version
-        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
-
-      - name: Create release
-        id: create-release
-        uses: softprops/action-gh-release@v1
-        with:
-          draft: false
-          prerelease: false
-          body: |
-            ## NebulaTerm-AI ${{ github.ref_name }}
-
-            ### Download the installer for your platform:
-            - **Windows**: Download the `.msi` or `-setup.exe` file
-            - **macOS**: Download the `.dmg` file
-            - **Linux**: Download the `.deb` or `.AppImage` file
-
-            ### Installation Instructions
-
-            #### Windows
-            1. Download the MSI installer or NSIS setup executable
-            2. Run the installer and follow the prompts
-            3. Launch NebulaTerm-AI from the Start Menu
-
-            #### macOS
-            1. Download the DMG file
-            2. Open the DMG and drag NebulaTerm-AI to Applications
-            3. Launch from Applications (you may need to allow it in System Preferences > Security)
-
-            #### Linux
-            **DEB Package (Ubuntu/Debian):**
-            ```bash
-            sudo dpkg -i nebulaterm-ai_*.deb
-            sudo apt-get install -f
-            ```
-
-            **AppImage:**
-            ```bash
-            chmod +x NebulaTerm*.AppImage
-            ./NebulaTerm*.AppImage
-            ```
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-
   build-tauri:
-    needs: create-release
     permissions:
       contents: write
     strategy:
