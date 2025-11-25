@@ -25,20 +25,19 @@ jobs:
 
       - name: Create release
         id: create-release
-        uses: actions/github-script@v7
+        uses: softprops/action-gh-release@v1
         with:
-          script: |
-            const { data } = await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: context.ref.replace('refs/tags/', ''),
-              name: `NebulaTerm-AI ${context.ref.replace('refs/tags/', '')}`,
-              body: `## NebulaTerm-AI ${context.ref.replace('refs/tags/', '')}
+          files: |
+            LICENSE
+          draft: false
+          prerelease: false
+          body: |
+            ## NebulaTerm-AI ${{ github.ref_name }}
 
             ### Download the installer for your platform:
-            - **Windows**: Download the \`.msi\` or \`-setup.exe\` file
-            - **macOS**: Download the \`.dmg\` file
-            - **Linux**: Download the \`.deb\` or \`.AppImage\` file
+            - **Windows**: Download the `.msi` or `-setup.exe` file
+            - **macOS**: Download the `.dmg` file
+            - **Linux**: Download the `.deb` or `.AppImage` file
 
             ### Installation Instructions
 
@@ -54,20 +53,18 @@ jobs:
 
             #### Linux
             **DEB Package (Ubuntu/Debian):**
-            \`\`\`bash
+            ```bash
             sudo dpkg -i nebulaterm-ai_*.deb
             sudo apt-get install -f
-            \`\`\`
+            ```
 
             **AppImage:**
-            \`\`\`bash
+            ```bash
             chmod +x NebulaTerm*.AppImage
             ./NebulaTerm*.AppImage
-            \`\`\``,
-              draft: false,
-              prerelease: false
-            })
-            return data.id
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-tauri:
     needs: create-release
@@ -109,5 +106,3 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
