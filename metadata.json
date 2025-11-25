@@ -1,0 +1,5 @@
+{
+  "name": "NebulaTerm AI",
+  "description": "A professional AI-enhanced SSH client. Features server management, Gemini-powered command assistance, and auto-correction.",
+  "requestFramePermissions": []
+}
