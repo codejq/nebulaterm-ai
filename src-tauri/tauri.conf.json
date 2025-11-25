@@ -20,7 +20,7 @@
     },
     "bundle": {
       "active": true,
-      "targets": "all",
+      "targets": ["deb", "rpm", "appimage", "msi", "nsis", "dmg"],
       "identifier": "com.nebulaterm.ai",
       "icon": [
         "icons/32x32.png",

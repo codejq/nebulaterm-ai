@@ -55,6 +55,66 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
             src-tauri/target/release/bundle/appimage/*.AppImage
+          body: |
+            ## NebulaTerm-AI ${{ github.ref_name }}
+
+            ### Download the installer for your platform:
+
+            #### Windows
+            - **MSI Installer**: Download the `.msi` file
+            - **NSIS Setup**: Download the `-setup.exe` file
+
+            #### macOS
+            - **DMG Package**: Download the `.dmg` file
+
+            #### Linux
+            - **DEB Package** (Ubuntu/Debian)
+            - **RPM Package** (Fedora/RHEL/CentOS)
+            - **AppImage** (Universal)
+
+            ---
+
+            ## Installation Instructions
+
+            ### Windows
+            1. Download the MSI installer or NSIS setup executable
+            2. Run the installer and follow the prompts
+            3. Launch NebulaTerm-AI from the Start Menu
+
+            ### macOS
+            1. Download the DMG file
+            2. Open the DMG and drag NebulaTerm-AI to Applications
+            3. Launch from Applications (you may need to allow it in System Preferences > Security)
+
+            ### Linux
+
+            **DEB Package (Ubuntu/Debian):**
+            ```bash
+            # Download and install
+            sudo dpkg -i nebulaterm-ai_*.deb
+            # If you get dependency errors, run:
+            sudo apt-get install -f
+            ```
+
+            **RPM Package (Fedora/RHEL/CentOS):**
+            ```bash
+            # Download and install
+            sudo rpm -i nebulaterm-ai-*.x86_64.rpm
+            # Or use dnf:
+            sudo dnf install nebulaterm-ai-*.x86_64.rpm
+            ```
+
+            **AppImage (Universal for all Linux distributions):**
+            ```bash
+            # Download, make executable, and run
+            chmod +x nebulaterm-ai_*.AppImage
+            ./nebulaterm-ai_*.AppImage
+            ```
+
+            ---
+
+            **For more information and documentation, visit the [project repository](https://github.com/codejq/nebulaterm-ai)**
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
