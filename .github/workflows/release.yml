@@ -27,8 +27,6 @@ jobs:
         id: create-release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            LICENSE
           draft: false
           prerelease: false
           body: |
