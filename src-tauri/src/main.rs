@@ -25,6 +25,12 @@ enum PtySessionType {
         session: Session,
         channel: Option<Channel>,
     },
+    NativeSsh {
+        pty_pair: Arc<Mutex<PtyPair>>,
+        writer: Arc<Mutex<Box<dyn Write + Send>>>,
+        #[allow(dead_code)]
+        child: Box<dyn Child + Send>,
+    },
     Local {
         pty_pair: Arc<Mutex<PtyPair>>,
         writer: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -50,6 +56,7 @@ struct ConnectionParams {
     username: String,
     password: Option<String>,
     ssh_key_path: Option<String>,
+    ssh_key_content: Option<String>,
     ssh_key_passphrase: Option<String>,
 }
 
@@ -64,6 +71,95 @@ struct PtyResizeParams {
     session_id: String,
     cols: u32,
     rows: u32,
+}
+
+// Native SSH Connection (uses system ssh command)
+async fn connect_with_native_ssh(params: ConnectionParams, window: Window) -> Result<String, String> {
+    let key_path = params.ssh_key_path.as_ref().unwrap();
+
+    // Build SSH command
+    let cmd_args = vec![
+        format!("{}@{}", params.username, params.host),
+        "-p".to_string(),
+        params.port.to_string(),
+        "-i".to_string(),
+        key_path.clone(),
+        "-o".to_string(),
+        "StrictHostKeyChecking=no".to_string(),
+        "-o".to_string(),
+        "BatchMode=yes".to_string(),
+    ];
+
+    // Create PTY
+    let pty_system = portable_pty::native_pty_system();
+    let pty_pair = pty_system.openpty(portable_pty::PtySize {
+        rows: 24,
+        cols: 80,
+        pixel_width: 0,
+        pixel_height: 0,
+    }).map_err(|e| format!("Failed to create PTY: {}", e))?;
+
+    // Spawn SSH command
+    let mut cmd = portable_pty::CommandBuilder::new("ssh");
+    for arg in cmd_args {
+        cmd.arg(arg);
+    }
+
+    let child = pty_pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("Failed to spawn SSH: {}", e))?;
+
+    let reader = pty_pair.master.try_clone_reader()
+        .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
+    let writer = pty_pair.master.take_writer()
+        .map_err(|e| format!("Failed to get PTY writer: {}", e))?;
+
+    let pty_pair_arc = Arc::new(Mutex::new(pty_pair));
+    let writer_arc = Arc::new(Mutex::new(writer));
+
+    let pty_session = Arc::new(Mutex::new(PtySession {
+        session_type: PtySessionType::NativeSsh {
+            pty_pair: pty_pair_arc.clone(),
+            writer: writer_arc.clone(),
+            child,
+        },
+    }));
+
+    PTY_SESSIONS.lock().insert(params.session_id.clone(), pty_session.clone());
+
+    // Start background thread to stream output
+    let session_id_clone = params.session_id.clone();
+    let window_clone = window.clone();
+    thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        let mut reader = reader;
+        loop {
+            match reader.read(&mut buf) {
+                Ok(n) if n > 0 => {
+                    let data = String::from_utf8_lossy(&buf[0..n]).to_string();
+                    let _ = window_clone.emit("pty-output", serde_json::json!({
+                        "session_id": session_id_clone,
+                        "data": data
+                    }));
+                },
+                Ok(_) => break, // EOF
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(10));
+                    continue;
+                },
+                Err(e) => {
+                    let _ = window_clone.emit("pty-disconnect", serde_json::json!({
+                        "session_id": session_id_clone,
+                        "error": format!("Connection lost: {}", e)
+                    }));
+                    break;
+                }
+            }
+        }
+    });
+
+    Ok("Connected via native SSH".to_string())
 }
 
 #[tauri::command]
@@ -81,21 +177,103 @@ async fn pty_connect(params: ConnectionParams, window: Window) -> Result<String,
     // Set keepalive to prevent connection timeout (send keepalive every 60 seconds)
     sess.set_keepalive(true, 60);
 
-    // Authentication
-    if let Some(key_path) = params.ssh_key_path {
+    // Check if we should use native SSH (for ED25519 keys or Windows)
+    #[cfg(windows)]
+    let use_native_ssh = params.ssh_key_path.is_some();
+    #[cfg(not(windows))]
+    let use_native_ssh = false;
+
+    if use_native_ssh && params.ssh_key_path.is_some() {
+        // Use native SSH command for better key compatibility
+        return connect_with_native_ssh(params, window).await;
+    }
+
+    // Authentication - Try key file path first, then key content, then password
+    if let Some(ref key_path) = params.ssh_key_path {
+        // Verify the key file exists
+        if !Path::new(key_path).exists() {
+            return Err(format!("SSH key file not found: {}", key_path));
+        }
+
         let passphrase = params.ssh_key_passphrase.as_deref();
-        sess.userauth_pubkey_file(
+
+        // Generate public key file path (libssh2 needs it for some key types)
+        let pub_key_path = format!("{}.pub", key_path);
+        let pub_key_exists = Path::new(&pub_key_path).exists();
+
+        // If public key doesn't exist, generate it
+        if !pub_key_exists {
+            let output = std::process::Command::new("ssh-keygen")
+                .arg("-y")
+                .arg("-f")
+                .arg(key_path)
+                .output();
+
+            if let Ok(out) = output {
+                if out.status.success() {
+                    std::fs::write(&pub_key_path, out.stdout).ok();
+                }
+            }
+        }
+
+        // Try with public key file first, fall back to None
+        let pub_key_opt = if Path::new(&pub_key_path).exists() {
+            Some(Path::new(&pub_key_path))
+        } else {
+            None
+        };
+
+        let auth_result = sess.userauth_pubkey_file(
             &params.username,
-            None,
-            Path::new(&key_path),
+            pub_key_opt,
+            Path::new(key_path),
             passphrase,
-        )
-        .map_err(|e| format!("SSH key authentication failed: {}", e))?;
-    } else if let Some(password) = params.password {
-        sess.userauth_password(&params.username, &password)
-            .map_err(|e| format!("Password authentication failed: {}", e))?;
+        );
+
+        if let Err(e) = auth_result {
+            let code = e.code();
+            let msg = e.message();
+
+            // Check if this is an ed25519 key (common issue on Windows)
+            let is_ed25519 = if let Some(pub_key) = pub_key_opt {
+                std::fs::read_to_string(pub_key)
+                    .ok()
+                    .map(|content| content.contains("ssh-ed25519"))
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+
+            let error_msg = if is_ed25519 {
+                format!(
+                    "ED25519 key authentication failed. Windows libssh2 has limited ed25519 support.\n\
+                    \nWorkaround: Generate an RSA key instead:\n  \
+                    ssh-keygen -t rsa -b 4096 -f mykey\n\
+                    \nThen import the RSA key into NebulaTerm.\n\
+                    \nTechnical error: [{}] {}",
+                    code, msg
+                )
+            } else {
+                format!(
+                    "SSH key file authentication failed for '{}':\n[{}] {}\n\
+                    \nTroubleshooting:\n\
+                    - Ensure the public key is added to the server's ~/.ssh/authorized_keys\n\
+                    - Verify the key has the correct permissions\n\
+                    - Try using an RSA key if using ed25519",
+                    key_path, code, msg
+                )
+            };
+
+            return Err(error_msg);
+        }
+    } else if let Some(ref password) = params.password {
+        sess.userauth_password(&params.username, password)
+            .map_err(|e| format!(
+                "Password authentication failed for user '{}': {}",
+                params.username, e
+            ))?;
     } else {
-        return Err("No authentication method provided".to_string());
+        return Err("No authentication method provided. Please configure a password or SSH key.".to_string());
     }
 
     if !sess.authenticated() {
@@ -326,6 +504,14 @@ async fn pty_write(params: PtyWriteParams) -> Result<(), String> {
                 Err("Channel not available".to_string())
             }
         },
+        PtySessionType::NativeSsh { writer, .. } => {
+            let mut w = writer.lock();
+            w.write_all(params.data.as_bytes())
+                .map_err(|e| format!("Failed to write to PTY: {}", e))?;
+            w.flush()
+                .map_err(|e| format!("Failed to flush PTY: {}", e))?;
+            Ok(())
+        },
         PtySessionType::Local { writer, .. } => {
             let mut w = writer.lock();
             w.write_all(params.data.as_bytes())
@@ -351,6 +537,16 @@ async fn pty_resize(params: PtyResizeParams) -> Result<(), String> {
             } else {
                 Err("Channel not available".to_string())
             }
+        },
+        PtySessionType::NativeSsh { pty_pair, .. } => {
+            let pair = pty_pair.lock();
+            pair.master.resize(PtySize {
+                rows: params.rows as u16,
+                cols: params.cols as u16,
+                pixel_width: 0,
+                pixel_height: 0,
+            }).map_err(|e| format!("Failed to resize PTY: {}", e))?;
+            Ok(())
         },
         PtySessionType::Local { pty_pair, .. } => {
             let pair = pty_pair.lock();
@@ -379,6 +575,9 @@ async fn pty_disconnect(session_id: String) -> Result<String, String> {
                 }
                 let _ = session.disconnect(None, "Client disconnecting", None);
             },
+            PtySessionType::NativeSsh { .. } => {
+                // Native SSH PTY will be cleaned up when dropped
+            },
             PtySessionType::Local { .. } => {
                 // Local PTY will be cleaned up when dropped
             }
@@ -393,6 +592,160 @@ async fn pty_disconnect(session_id: String) -> Result<String, String> {
 async fn pty_check_connection(session_id: String) -> Result<bool, String> {
     let sessions = PTY_SESSIONS.lock();
     Ok(sessions.contains_key(&session_id))
+}
+
+#[tauri::command]
+async fn pty_keepalive(session_id: String) -> Result<String, String> {
+    let pty_session_arc = {
+        let sessions = PTY_SESSIONS.lock();
+        sessions.get(&session_id)
+            .ok_or_else(|| "Session not found".to_string())?
+            .clone()
+    };
+
+    let mut pty = pty_session_arc.lock();
+    match &mut pty.session_type {
+        PtySessionType::Ssh { session, .. } => {
+            // Temporarily set blocking for keepalive
+            session.set_blocking(true);
+            let result = session.keepalive_send()
+                .map_err(|e| format!("Failed to send keepalive: {}", e));
+            session.set_blocking(false);
+            result?;
+            Ok("Keepalive sent".to_string())
+        },
+        PtySessionType::NativeSsh { .. } => {
+            Ok("Native SSH handles keepalive automatically".to_string())
+        },
+        PtySessionType::Local { .. } => {
+            Ok("Local terminal does not need keepalive".to_string())
+        }
+    }
+}
+
+// SSH Key Storage
+
+#[tauri::command]
+async fn save_ssh_key_to_file(key_id: String, key_content: String) -> Result<String, String> {
+    // Get the executable's directory for portable key storage
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    let app_dir = exe_path.parent()
+        .ok_or("Failed to get executable parent directory")?;
+
+    // Create ssh_keys directory if it doesn't exist
+    let keys_dir = app_dir.join("ssh_keys");
+    std::fs::create_dir_all(&keys_dir)
+        .map_err(|e| format!("Failed to create ssh_keys directory: {}", e))?;
+
+    // Save key to file
+    let key_file_path = keys_dir.join(format!("{}.key", key_id));
+
+    // Check if key is in OpenSSH format and convert to PEM if needed
+    let final_key_content = if key_content.contains("BEGIN OPENSSH PRIVATE KEY") {
+        // Write temporary file for conversion
+        let temp_key_path = keys_dir.join(format!("{}.temp", key_id));
+        std::fs::write(&temp_key_path, &key_content)
+            .map_err(|e| format!("Failed to write temp key file: {}", e))?;
+
+        // Convert OpenSSH format to PEM format using ssh-keygen
+        let output = std::process::Command::new("ssh-keygen")
+            .arg("-p")
+            .arg("-f")
+            .arg(&temp_key_path)
+            .arg("-m")
+            .arg("pem")
+            .arg("-N")
+            .arg("")
+            .arg("-P")
+            .arg("")
+            .output()
+            .map_err(|e| format!("Failed to run ssh-keygen for conversion: {}", e))?;
+
+        if !output.status.success() {
+            std::fs::remove_file(&temp_key_path).ok();
+            return Err(format!(
+                "Failed to convert key to PEM format: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        // Read the converted key
+        let converted_content = std::fs::read_to_string(&temp_key_path)
+            .map_err(|e| format!("Failed to read converted key: {}", e))?;
+
+        // Clean up temp file
+        std::fs::remove_file(&temp_key_path).ok();
+
+        converted_content
+    } else {
+        key_content
+    };
+
+    std::fs::write(&key_file_path, final_key_content)
+        .map_err(|e| format!("Failed to write key file: {}", e))?;
+
+    // Set restrictive permissions on Unix systems
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&key_file_path)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?
+            .permissions();
+        perms.set_mode(0o600); // rw------- (owner read/write only)
+        std::fs::set_permissions(&key_file_path, perms)
+            .map_err(|e| format!("Failed to set file permissions: {}", e))?;
+    }
+
+    // Set restrictive permissions on Windows
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+
+        // Get current username
+        let username = std::env::var("USERNAME")
+            .map_err(|e| format!("Failed to get USERNAME: {}", e))?;
+
+        // Use icacls to set proper permissions:
+        // 1. Remove inheritance
+        // 2. Remove all existing permissions
+        // 3. Grant only current user Full Control
+        let output = Command::new("icacls")
+            .arg(&key_file_path)
+            .arg("/inheritance:r")
+            .arg("/grant:r")
+            .arg(format!("{}:(F)", username))
+            .output()
+            .map_err(|e| format!("Failed to execute icacls: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to set file permissions: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+    }
+
+    Ok(key_file_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn delete_ssh_key_file(key_id: String) -> Result<(), String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    let app_dir = exe_path.parent()
+        .ok_or("Failed to get executable parent directory")?;
+
+    let key_file_path = app_dir.join("ssh_keys").join(format!("{}.key", key_id));
+
+    if key_file_path.exists() {
+        std::fs::remove_file(&key_file_path)
+            .map_err(|e| format!("Failed to delete key file: {}", e))?;
+    }
+
+    Ok(())
 }
 
 // Secure Storage Commands
@@ -507,6 +860,9 @@ fn main() {
             pty_resize,
             pty_disconnect,
             pty_check_connection,
+            pty_keepalive,
+            save_ssh_key_to_file,
+            delete_ssh_key_file,
             init_secure_storage,
             has_master_password,
             set_master_password,

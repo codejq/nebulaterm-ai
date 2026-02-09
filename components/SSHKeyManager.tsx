@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SSHKey } from '../types';
 import { X, Key, Plus, Trash2, Check, ShieldCheck } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/tauri';
 
 interface SSHKeyManagerProps {
   isOpen: boolean;
@@ -14,19 +15,46 @@ const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({ isOpen, onClose, keys, on
   const [isAdding, setIsAdding] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyContent, setNewKeyContent] = useState('');
+  const [newKeyPassphrase, setNewKeyPassphrase] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (newKeyName && newKeyContent) {
-      onAddKey({
-        id: crypto.randomUUID(),
-        name: newKeyName,
-        content: newKeyContent
-      });
-      setNewKeyName('');
-      setNewKeyContent('');
-      setIsAdding(false);
+      const keyId = crypto.randomUUID();
+      setIsSaving(true);
+      setSaveError(null);
+
+      try {
+        // Save key content to file using Tauri backend
+        const keyPath = await invoke<string>('save_ssh_key_to_file', {
+          keyId: keyId,
+          keyContent: newKeyContent,
+        });
+
+        console.log('Key saved to:', keyPath);
+
+        // Add key with file path
+        onAddKey({
+          id: keyId,
+          name: newKeyName,
+          content: newKeyContent, // Keep content for display/backup
+          privateKeyPath: keyPath,
+          passphrase: newKeyPassphrase || undefined,
+        });
+
+        setNewKeyName('');
+        setNewKeyContent('');
+        setNewKeyPassphrase('');
+        setIsAdding(false);
+        setIsSaving(false);
+      } catch (error) {
+        console.error('Failed to save SSH key:', error);
+        setSaveError(`Failed to save SSH key: ${error}`);
+        setIsSaving(false);
+      }
     }
   };
 
@@ -87,16 +115,49 @@ const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({ isOpen, onClose, keys, on
                      className="w-full h-48 bg-gray-900 border border-gray-700 rounded p-2 text-xs font-mono text-gray-300 focus:border-indigo-500 outline-none resize-none"
                      placeholder="-----BEGIN RSA PRIVATE KEY-----..."
                    />
-                   <p className="text-[10px] text-gray-500 mt-1">Keys are stored locally in your browser/app storage.</p>
+                   <p className="text-[10px] text-gray-500 mt-1">Keys are securely saved to disk and work with all formats (OpenSSH, PEM, PKCS#8).</p>
+                </div>
+                {saveError && (
+                  <div className="p-2 bg-red-900/20 border border-red-700/50 rounded text-red-400 text-xs">
+                    {saveError}
+                  </div>
+                )}
+                <div>
+                   <label className="block text-xs font-medium text-gray-400 mb-1">Passphrase (optional)</label>
+                   <input
+                     type="password"
+                     value={newKeyPassphrase}
+                     onChange={e => setNewKeyPassphrase(e.target.value)}
+                     className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none"
+                     placeholder="Leave empty if key has no passphrase"
+                   />
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
-                  <button onClick={() => setIsAdding(false)} className="px-3 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 rounded text-gray-300 transition">Cancel</button>
-                  <button 
-                    onClick={handleSave} 
-                    disabled={!newKeyName || !newKeyContent}
+                  <button
+                    onClick={() => {
+                      setIsAdding(false);
+                      setSaveError(null);
+                    }}
+                    disabled={isSaving}
+                    className="px-3 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 rounded text-gray-300 transition disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={!newKeyName || !newKeyContent || isSaving}
                     className="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-white flex items-center gap-1 transition"
                   >
-                    <Check className="w-3 h-3" /> Save Key
+                    {isSaving ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3 h-3" /> Save Key
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

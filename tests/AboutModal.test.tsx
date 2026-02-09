@@ -6,7 +6,7 @@ describe("AboutModal", () => {
   it("should not render when isOpen is false", () => {
     const onClose = vi.fn();
     const { container } = render(
-      <AboutModal isOpen={false} onClose={onClose} />
+      <AboutModal isOpen={false} onClose={onClose} />,
     );
     expect(container.firstChild).toBeNull();
   });
@@ -21,9 +21,9 @@ describe("AboutModal", () => {
     const onClose = vi.fn();
     render(<AboutModal isOpen={true} onClose={onClose} />);
     expect(screen.getByText("NebulaTerm AI")).toBeInTheDocument();
-    expect(screen.getByText("Version 1.0.12")).toBeInTheDocument();
+    expect(screen.getByText("Version 1.0.13")).toBeInTheDocument();
     expect(
-      screen.getByText("Next-Generation SSH Terminal Client")
+      screen.getByText("Next-Generation SSH Terminal Client"),
     ).toBeInTheDocument();
   });
 
@@ -56,7 +56,7 @@ describe("AboutModal", () => {
     expect(websiteLink).toBeInTheDocument();
     expect(websiteLink).toHaveAttribute(
       "href",
-      "https://nebulaterm-ai.quantum-billing.com/"
+      "https://nebulaterm-ai.quantum-billing.com/",
     );
     expect(websiteLink).toHaveAttribute("target", "_blank");
   });
@@ -86,7 +86,7 @@ describe("AboutModal", () => {
     const onClose = vi.fn();
     render(<AboutModal isOpen={true} onClose={onClose} />);
     expect(
-      screen.getByText(/Copyright © 2024 Quantum Billing, LLC/i)
+      screen.getByText(/Copyright © 2024 Quantum Billing, LLC/i),
     ).toBeInTheDocument();
   });
 });

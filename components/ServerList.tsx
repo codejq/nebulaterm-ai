@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Server, SSHKey } from '../types';
-import { Plus, Server as ServerIcon, Trash2, Monitor, Command, Key, Settings as SettingsIcon, Terminal, Info } from 'lucide-react';
+import { Plus, Server as ServerIcon, Trash2, Pencil, Monitor, Command, Key, Settings as SettingsIcon, Terminal, Info } from 'lucide-react';
 import SSHKeyManager from './SSHKeyManager';
 
 interface ServerListProps {
@@ -9,6 +9,7 @@ interface ServerListProps {
   activeServerId: string | null;
   onSelectServer: (server: Server) => void;
   onAddServer: (server: Server) => void;
+  onEditServer: (server: Server) => void;
   onDeleteServer: (id: string) => void;
   sshKeys: SSHKey[];
   onAddKey: (key: SSHKey) => void;
@@ -22,6 +23,7 @@ const ServerList: React.FC<ServerListProps> = ({
   activeServerId,
   onSelectServer,
   onAddServer,
+  onEditServer,
   onDeleteServer,
   sshKeys,
   onAddKey,
@@ -30,8 +32,10 @@ const ServerList: React.FC<ServerListProps> = ({
   onOpenAbout
 }) => {
   const [isAdding, setIsAdding] = useState(false);
+  const [editingServer, setEditingServer] = useState<Server | null>(null);
   const [isKeyManagerOpen, setIsKeyManagerOpen] = useState(false);
-  const [newServer, setNewServer] = useState<Partial<Server>>({
+
+  const defaultServerForm: Partial<Server> = {
     name: '',
     host: '',
     username: 'root',
@@ -40,19 +44,54 @@ const ServerList: React.FC<ServerListProps> = ({
     os: 'linux',
     sshKeyId: '',
     preferredAuthMethod: 'password'
-  });
+  };
+
+  const [newServer, setNewServer] = useState<Partial<Server>>(defaultServerForm);
 
   const handleSave = () => {
     if (newServer.name && newServer.host && newServer.username) {
-      onAddServer({
-        ...newServer,
-        id: crypto.randomUUID(),
-        port: newServer.port || 22,
-        sshKeyId: newServer.sshKeyId || undefined
-      } as Server);
+      if (editingServer) {
+        // Editing existing server
+        onEditServer({
+          ...newServer,
+          id: editingServer.id,
+          port: newServer.port || 22,
+          sshKeyId: newServer.sshKeyId || undefined
+        } as Server);
+        setEditingServer(null);
+      } else {
+        // Adding new server
+        onAddServer({
+          ...newServer,
+          id: crypto.randomUUID(),
+          port: newServer.port || 22,
+          sshKeyId: newServer.sshKeyId || undefined
+        } as Server);
+      }
       setIsAdding(false);
-      setNewServer({ name: '', host: '', username: 'root', password: '', port: 22, os: 'linux', sshKeyId: '' });
+      setNewServer(defaultServerForm);
     }
+  };
+
+  const handleEdit = (server: Server) => {
+    setEditingServer(server);
+    setNewServer({
+      name: server.name,
+      host: server.host,
+      username: server.username,
+      password: server.password || '',
+      port: server.port,
+      os: server.os,
+      sshKeyId: server.sshKeyId || '',
+      preferredAuthMethod: server.preferredAuthMethod || 'password',
+    });
+    setIsAdding(true);
+  };
+
+  const handleCancelForm = () => {
+    setIsAdding(false);
+    setEditingServer(null);
+    setNewServer(defaultServerForm);
   };
 
   return (
@@ -64,7 +103,13 @@ const ServerList: React.FC<ServerListProps> = ({
             NebulaTerm
           </h2>
           <button
-            onClick={() => setIsAdding(!isAdding)}
+            onClick={() => {
+              if (isAdding) {
+                handleCancelForm();
+              } else {
+                setIsAdding(true);
+              }
+            }}
             className="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition"
             title="Add Server"
           >
@@ -135,15 +180,28 @@ const ServerList: React.FC<ServerListProps> = ({
                 <span className="text-xs opacity-60 truncate">{server.username}@{server.host}</span>
               </div>
             </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteServer(server.id);
-              }}
-              className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEdit(server);
+                }}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:text-indigo-400 transition"
+                title="Edit Server"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteServer(server.id);
+                }}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition"
+                title="Delete Server"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         ))}
 
@@ -158,7 +216,7 @@ const ServerList: React.FC<ServerListProps> = ({
         <div className="absolute top-0 left-0 w-full h-full bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-gray-700 p-6 rounded-xl w-full max-w-sm shadow-2xl">
             <h3 className="text-lg font-semibold mb-4 text-white flex items-center gap-2">
-              <Monitor className="w-5 h-5" /> Add New Server
+              <Monitor className="w-5 h-5" /> {editingServer ? 'Edit Server' : 'Add New Server'}
             </h3>
             
             <div className="space-y-3">
@@ -254,7 +312,7 @@ const ServerList: React.FC<ServerListProps> = ({
 
             <div className="flex gap-2 mt-6">
               <button
-                onClick={() => setIsAdding(false)}
+                onClick={handleCancelForm}
                 className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm font-medium transition"
               >
                 Cancel
@@ -263,7 +321,7 @@ const ServerList: React.FC<ServerListProps> = ({
                 onClick={handleSave}
                 className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-sm font-medium transition shadow-[0_0_15px_rgba(79,70,229,0.3)]"
               >
-                Save
+                {editingServer ? 'Update' : 'Save'}
               </button>
             </div>
           </div>

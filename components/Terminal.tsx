@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ConnectionStatus, Server, SSHKey, AppSettings, AIProviderId } from '../types';
 import { askAI, autoCorrectAI } from '../services/aiService';
-import { Sparkles, Send, Wifi, WifiOff, RotateCcw, Play } from 'lucide-react';
+import { Sparkles, Send, Wifi, WifiOff, RotateCcw, Play, HeartPulse } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
 import { Terminal as XTerm } from '@xterm/xterm';
@@ -22,6 +22,8 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiResponses, setAiResponses] = useState<string[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<AIProviderId>(settings.activeProvider);
+  const [keepAliveEnabled, setKeepAliveEnabled] = useState(false);
+  const keepAliveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -249,6 +251,7 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
             username: server.username,
             password: preferredMethod === 'password' ? (server.password || null) : null,
             ssh_key_path: preferredMethod === 'key' ? (key?.privateKeyPath || null) : null,
+            ssh_key_content: preferredMethod === 'key' ? (key?.content || null) : null,
             ssh_key_passphrase: preferredMethod === 'key' ? (key?.passphrase || null) : null,
           };
 
@@ -296,6 +299,40 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
       }
     };
   }, [server]); // Only run when server changes
+
+  // Keep-alive interval effect
+  useEffect(() => {
+    if (keepAliveEnabled && sessionId && status === ConnectionStatus.CONNECTED && !server?.isLocal) {
+      keepAliveIntervalRef.current = setInterval(() => {
+        invoke('pty_keepalive', { sessionId })
+          .then(() => console.log('Keepalive sent'))
+          .catch((err) => console.warn('Keepalive failed:', err));
+      }, 30000); // Every 30 seconds
+    }
+
+    return () => {
+      if (keepAliveIntervalRef.current) {
+        clearInterval(keepAliveIntervalRef.current);
+        keepAliveIntervalRef.current = null;
+      }
+    };
+  }, [keepAliveEnabled, sessionId, status, server?.isLocal]);
+
+  const handleSendKeepAlive = () => {
+    if (sessionId && status === ConnectionStatus.CONNECTED) {
+      invoke('pty_keepalive', { sessionId })
+        .then(() => {
+          if (xtermRef.current) {
+            xtermRef.current.writeln(`\r\n\x1b[36m♥ Keepalive signal sent\x1b[0m`);
+          }
+        })
+        .catch((err) => {
+          if (xtermRef.current) {
+            xtermRef.current.writeln(`\r\n\x1b[31m✗ Keepalive failed: ${err}\x1b[0m`);
+          }
+        });
+    }
+  };
 
   const handleAiAsk = async () => {
     if (!aiQuery.trim()) return;
@@ -383,7 +420,21 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
           </span>
         </div>
 
-        <div className="text-[10px] text-gray-500 font-mono">
+        <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono">
+          {!server.isLocal && status === ConnectionStatus.CONNECTED && (
+            <button
+              onClick={() => setKeepAliveEnabled(!keepAliveEnabled)}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition ${
+                keepAliveEnabled
+                  ? 'bg-green-900/30 text-green-400 border border-green-700/50'
+                  : 'hover:bg-gray-800 text-gray-500 border border-transparent'
+              }`}
+              title={keepAliveEnabled ? 'Keep-alive active (every 30s) - click to disable' : 'Enable auto keep-alive'}
+            >
+              <HeartPulse className={`w-3 h-3 ${keepAliveEnabled ? 'animate-pulse' : ''}`} />
+              {keepAliveEnabled ? 'ALIVE' : 'Keep-alive'}
+            </button>
+          )}
           {server.isLocal ? 'LOCAL' : server.os.toUpperCase()} • {settings.activeProvider.toUpperCase()}
         </div>
       </div>
@@ -438,6 +489,16 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
                   <Play className="w-4 h-4 text-green-400" />
                   <span className="text-[10px] text-gray-300">Run 'top'</span>
                 </button>
+                {!server?.isLocal && (
+                  <button
+                    onClick={handleSendKeepAlive}
+                    disabled={status !== ConnectionStatus.CONNECTED}
+                    className="p-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded flex flex-col items-center justify-center gap-1 transition disabled:opacity-50 col-span-2"
+                  >
+                    <HeartPulse className="w-4 h-4 text-cyan-400" />
+                    <span className="text-[10px] text-gray-300">Send Keep-Alive</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

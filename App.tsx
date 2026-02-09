@@ -138,9 +138,15 @@ function App() {
   };
 
   const handleAddServer = (newServer: Server) => setServers([...servers, newServer]);
+  const handleEditServer = (updatedServer: Server) => setServers(servers.map(s => s.id === updatedServer.id ? updatedServer : s));
   const handleDeleteServer = (id: string) => setServers(servers.filter(s => s.id !== id));
   const handleAddKey = (key: SSHKey) => setSshKeys([...sshKeys, key]);
-  const handleDeleteKey = (id: string) => setSshKeys(sshKeys.filter(k => k.id !== id));
+  const handleDeleteKey = (id: string) => {
+    // Delete the key file from disk
+    invoke('delete_ssh_key_file', { keyId: id }).catch(console.error);
+    // Remove from state
+    setSshKeys(sshKeys.filter(k => k.id !== id));
+  };
 
   // Show unlock prompt if database is locked
   if (isDbLocked) {
@@ -168,6 +174,7 @@ function App() {
         activeServerId={null} // Server list just acts as a launcher now
         onSelectServer={handleSelectServer}
         onAddServer={handleAddServer}
+        onEditServer={handleEditServer}
         onDeleteServer={handleDeleteServer}
         sshKeys={sshKeys}
         onAddKey={handleAddKey}
