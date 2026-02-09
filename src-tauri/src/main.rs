@@ -649,6 +649,41 @@ async fn save_ssh_key_to_file(key_id: String, key_content: String) -> Result<Str
         std::fs::write(&temp_key_path, &key_content)
             .map_err(|e| format!("Failed to write temp key file: {}", e))?;
 
+        // Set restrictive permissions on temp file BEFORE ssh-keygen uses it
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&temp_key_path)
+                .map_err(|e| format!("Failed to get temp file metadata: {}", e))?
+                .permissions();
+            perms.set_mode(0o600);
+            std::fs::set_permissions(&temp_key_path, perms)
+                .map_err(|e| format!("Failed to set temp file permissions: {}", e))?;
+        }
+
+        #[cfg(windows)]
+        {
+            use std::process::Command;
+            let username = std::env::var("USERNAME")
+                .map_err(|e| format!("Failed to get USERNAME: {}", e))?;
+
+            let output = Command::new("icacls")
+                .arg(&temp_key_path)
+                .arg("/inheritance:r")
+                .arg("/grant:r")
+                .arg(format!("{}:(F)", username))
+                .output()
+                .map_err(|e| format!("Failed to execute icacls on temp file: {}", e))?;
+
+            if !output.status.success() {
+                std::fs::remove_file(&temp_key_path).ok();
+                return Err(format!(
+                    "Failed to set temp file permissions: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+        }
+
         // Convert OpenSSH format to PEM format using ssh-keygen
         let output = std::process::Command::new("ssh-keygen")
             .arg("-p")
