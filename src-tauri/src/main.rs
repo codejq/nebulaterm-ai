@@ -361,7 +361,12 @@ async fn pty_connect(params: ConnectionParams, window: Window) -> Result<String,
                         "data": data
                     }));
                 } else {
-                    break;
+                    // EOF - remote side closed the connection
+                    let _ = window_clone.emit("pty-disconnect", serde_json::json!({
+                        "session_id": session_id_clone,
+                        "error": "Connection closed by remote host"
+                    }));
+                    return; // Exit thread on EOF
                 }
             }
 

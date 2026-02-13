@@ -176,10 +176,15 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
     const unlistenDisconnect = listen('pty-disconnect', (event: any) => {
       const payload = event.payload;
       if (payload.session_id === sessionId) {
-        setStatus(ConnectionStatus.ERROR);
+        // Clean up backend session
+        invoke('pty_disconnect', { sessionId }).catch(() => {});
+        // Reset state so user can reconnect
+        setStatus(ConnectionStatus.DISCONNECTED);
+        setSessionId(null);
+        isConnectingRef.current = false;
         if (xtermRef.current) {
           xtermRef.current.writeln(`\r\n\x1b[31m✗ ${payload.error}\x1b[0m`);
-          xtermRef.current.writeln(`\x1b[33m⚠ Connection lost. Please reconnect.\x1b[0m`);
+          xtermRef.current.writeln(`\x1b[33m⚠ Connection lost. Press the reconnect button to reconnect.\x1b[0m`);
         }
       }
     });
@@ -285,6 +290,7 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
       } catch (error) {
         console.error('Connection error:', error);
         setStatus(ConnectionStatus.ERROR);
+        isConnectingRef.current = false;
         if (xtermRef.current) {
           xtermRef.current.writeln(`\x1b[31m✗ Connection failed: ${error}\x1b[0m`);
         }
@@ -385,6 +391,90 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
     }
   };
 
+  const handleReconnect = () => {
+    if (!server || !xtermRef.current || isConnectingRef.current) return;
+    if (status === ConnectionStatus.CONNECTED) return;
+
+    // Reset state and trigger reconnection
+    isConnectingRef.current = true;
+    setStatus(ConnectionStatus.CONNECTING);
+
+    const connectToServer = async () => {
+      if (xtermRef.current) {
+        if (server.isLocal) {
+          xtermRef.current.writeln(`\x1b[34mRestarting local terminal...\x1b[0m`);
+        } else {
+          xtermRef.current.writeln(`\x1b[34mReconnecting to ${server.host}:${server.port}...\x1b[0m`);
+        }
+      }
+
+      try {
+        const newSessionId = crypto.randomUUID();
+        setSessionId(newSessionId);
+
+        if (server.isLocal) {
+          const cols = xtermRef.current?.cols || 80;
+          const rows = xtermRef.current?.rows || 24;
+
+          await invoke<string>('pty_connect_local', {
+            params: { session_id: newSessionId, cols, rows },
+          });
+
+          setStatus(ConnectionStatus.CONNECTED);
+          if (xtermRef.current) {
+            xtermRef.current.writeln(`\x1b[32m✓ Local terminal started\x1b[0m`);
+          }
+        } else {
+          const key = server.sshKeyId ? sshKeys.find(k => k.id === server.sshKeyId) : null;
+          const preferredMethod = server.preferredAuthMethod || 'password';
+
+          const params = {
+            session_id: newSessionId,
+            host: server.host,
+            port: server.port,
+            username: server.username,
+            password: preferredMethod === 'password' ? (server.password || null) : null,
+            ssh_key_path: preferredMethod === 'key' ? (key?.privateKeyPath || null) : null,
+            ssh_key_content: preferredMethod === 'key' ? (key?.content || null) : null,
+            ssh_key_passphrase: preferredMethod === 'key' ? (key?.passphrase || null) : null,
+          };
+
+          await invoke<string>('pty_connect', { params });
+          setStatus(ConnectionStatus.CONNECTED);
+
+          if (xtermRef.current) {
+            xtermRef.current.writeln(`\x1b[32m✓ Reconnected to ${server.username}@${server.host}:${server.port}\x1b[0m`);
+          }
+        }
+
+        // Fit and resize PTY after reconnection
+        if (fitAddonRef.current && xtermRef.current) {
+          try {
+            fitAddonRef.current.fit();
+            invoke('pty_resize', {
+              params: {
+                session_id: newSessionId,
+                cols: xtermRef.current.cols,
+                rows: xtermRef.current.rows,
+              },
+            }).catch(console.error);
+          } catch (error) {
+            console.warn('Post-reconnection fit failed:', error);
+          }
+        }
+      } catch (error) {
+        console.error('Reconnection error:', error);
+        setStatus(ConnectionStatus.ERROR);
+        isConnectingRef.current = false;
+        if (xtermRef.current) {
+          xtermRef.current.writeln(`\x1b[31m✗ Reconnection failed: ${error}\x1b[0m`);
+        }
+      }
+    };
+
+    connectToServer();
+  };
+
   const handleQuickCommand = (cmd: string) => {
     if (sessionId && status === ConnectionStatus.CONNECTED && xtermRef.current) {
       invoke('pty_write', {
@@ -418,6 +508,16 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
           }`}>
             {status}
           </span>
+          {(status === ConnectionStatus.DISCONNECTED || status === ConnectionStatus.ERROR) && (
+            <button
+              onClick={handleReconnect}
+              className="flex items-center gap-1 px-2 py-0.5 text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white rounded transition"
+              title="Reconnect to server"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Reconnect
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono">
