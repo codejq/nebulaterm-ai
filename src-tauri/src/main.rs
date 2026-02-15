@@ -143,7 +143,14 @@ async fn connect_with_native_ssh(params: ConnectionParams, window: Window) -> Re
                         "data": data
                     }));
                 },
-                Ok(_) => break, // EOF
+                Ok(_) => {
+                    // EOF - SSH process terminated or connection closed
+                    let _ = window_clone.emit("pty-disconnect", serde_json::json!({
+                        "session_id": session_id_clone,
+                        "error": "Connection closed by remote host"
+                    }));
+                    break;
+                },
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(10));
                     continue;

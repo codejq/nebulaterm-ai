@@ -21,7 +21,7 @@ describe("AboutModal", () => {
     const onClose = vi.fn();
     render(<AboutModal isOpen={true} onClose={onClose} />);
     expect(screen.getByText("NebulaTerm AI")).toBeInTheDocument();
-    expect(screen.getByText("Version 1.0.15")).toBeInTheDocument();
+    expect(screen.getByText("Version 1.0.16")).toBeInTheDocument();
     expect(
       screen.getByText("Next-Generation SSH Terminal Client"),
     ).toBeInTheDocument();

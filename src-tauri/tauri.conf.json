@@ -8,7 +8,7 @@
   },
   "package": {
     "productName": "NebulaTerm-AI",
-    "version": "1.0.15"
+    "version": "1.0.16"
   },
   "tauri": {
     "allowlist": {
