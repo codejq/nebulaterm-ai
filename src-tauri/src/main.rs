@@ -131,13 +131,49 @@ async fn connect_with_native_ssh(params: ConnectionParams, window: Window) -> Re
     // Start background thread to stream output
     let session_id_clone = params.session_id.clone();
     let window_clone = window.clone();
+    let pty_session_clone = pty_session.clone();
     thread::spawn(move || {
         let mut buf = [0u8; 8192];
         let mut reader = reader;
         loop {
+            // Check if child process has exited
+            {
+                let mut session = pty_session_clone.lock();
+                if let PtySessionType::NativeSsh { child, .. } = &mut session.session_type {
+                    if let Ok(Some(_exit_status)) = child.try_wait() {
+                        // Child process exited - emit disconnect
+                        let _ = window_clone.emit("pty-disconnect", serde_json::json!({
+                            "session_id": session_id_clone,
+                            "error": "Connection closed by remote host"
+                        }));
+                        break;
+                    }
+                }
+            }
+
             match reader.read(&mut buf) {
                 Ok(n) if n > 0 => {
                     let data = String::from_utf8_lossy(&buf[0..n]).to_string();
+
+                    // Check if output contains SSH disconnect messages (be more lenient with pattern)
+                    if data.contains("closed by remote host") ||
+                       data.contains("Connection closed") ||
+                       data.contains("Connection reset") {
+                        println!("[DEBUG] Detected SSH disconnect message in output: {}", data.trim());
+                        let _ = window_clone.emit("pty-output", serde_json::json!({
+                            "session_id": session_id_clone,
+                            "data": data
+                        }));
+                        // Give time for the output to be displayed, then emit disconnect
+                        thread::sleep(Duration::from_millis(100));
+                        let _ = window_clone.emit("pty-disconnect", serde_json::json!({
+                            "session_id": session_id_clone,
+                            "error": "Connection closed by remote host"
+                        }));
+                        println!("[DEBUG] Disconnect event emitted after detecting close message");
+                        break;
+                    }
+
                     let _ = window_clone.emit("pty-output", serde_json::json!({
                         "session_id": session_id_clone,
                         "data": data
@@ -328,6 +364,25 @@ async fn pty_connect(params: ConnectionParams, window: Window) -> Result<String,
                 }
             };
 
+            // Check if channel is at EOF BEFORE trying to read
+            {
+                let mut pty = pty_session_arc.lock();
+                if let PtySessionType::Ssh { channel, .. } = &mut pty.session_type {
+                    if let Some(ref ch) = channel {
+                        if ch.eof() {
+                            // Channel reached EOF - connection closed
+                            println!("[DEBUG] SSH channel EOF detected (pre-read check) for session: {}", session_id_clone);
+                            let _ = window_clone.emit("pty-disconnect", serde_json::json!({
+                                "session_id": session_id_clone,
+                                "error": "Connection closed by remote host"
+                            }));
+                            println!("[DEBUG] Disconnect event emitted, exiting thread");
+                            return;
+                        }
+                    }
+                }
+            }
+
             // Continuously drain until WouldBlock
             loop {
                 let bytes_read = {
@@ -363,17 +418,60 @@ async fn pty_connect(params: ConnectionParams, window: Window) -> Result<String,
 
                 if bytes_read > 0 {
                     let data = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+
+                    // Check if output contains disconnect messages (lenient patterns)
+                    if data.contains("closed by remote host") ||
+                       data.contains("Connection closed") ||
+                       data.contains("Connection reset") {
+                        println!("[DEBUG] Detected disconnect message in libssh2 output: {}", data.trim());
+                        let _ = window_clone.emit("pty-output", serde_json::json!({
+                            "session_id": session_id_clone,
+                            "data": data
+                        }));
+                        // Give time for output to display, then emit disconnect
+                        thread::sleep(Duration::from_millis(100));
+                        let _ = window_clone.emit("pty-disconnect", serde_json::json!({
+                            "session_id": session_id_clone,
+                            "error": "Connection closed by remote host"
+                        }));
+                        println!("[DEBUG] Disconnect event emitted after detecting message");
+                        return;
+                    }
+
                     let _ = window_clone.emit("pty-output", serde_json::json!({
                         "session_id": session_id_clone,
                         "data": data
                     }));
                 } else {
                     // EOF - remote side closed the connection
+                    println!("[DEBUG] SSH read returned 0 bytes (EOF) for session: {}", session_id_clone);
                     let _ = window_clone.emit("pty-disconnect", serde_json::json!({
                         "session_id": session_id_clone,
                         "error": "Connection closed by remote host"
                     }));
+                    println!("[DEBUG] Disconnect event emitted from read EOF, exiting thread");
                     return; // Exit thread on EOF
+                }
+            }
+
+            // Check if channel is at EOF after draining
+            {
+                let mut pty = pty_session_arc.lock();
+                if let PtySessionType::Ssh { channel, .. } = &mut pty.session_type {
+                    if let Some(ref ch) = channel {
+                        let is_eof = ch.eof();
+                        println!("[DEBUG] SSH channel EOF check: {}", is_eof);
+                        if is_eof {
+                            // Channel reached EOF - connection closed
+                            println!("[DEBUG] Emitting pty-disconnect event for session: {}", session_id_clone);
+                            let _ = window_clone.emit("pty-disconnect", serde_json::json!({
+                                "session_id": session_id_clone,
+                                "error": "Connection closed by remote host"
+                            }));
+                            println!("[DEBUG] Disconnect event emitted, exiting thread");
+                            return;
+                        }
+                    }
                 }
             }
 
@@ -450,6 +548,7 @@ async fn pty_connect_local(params: LocalPtyParams, window: Window) -> Result<Str
             .map_err(|e| format!("Failed to clone reader: {}", e))?
     };
 
+    let pty_session_clone = pty_session.clone();
     thread::spawn(move || {
         let mut buffer = vec![0u8; 8192];
 
@@ -459,6 +558,21 @@ async fn pty_connect_local(params: LocalPtyParams, window: Window) -> Result<Str
                 let sessions = PTY_SESSIONS.lock();
                 if !sessions.contains_key(&session_id_clone) {
                     break;
+                }
+            }
+
+            // Check if child process has exited
+            {
+                let mut session = pty_session_clone.lock();
+                if let PtySessionType::Local { child, .. } = &mut session.session_type {
+                    if let Ok(Some(_exit_status)) = child.try_wait() {
+                        // Child process exited - emit disconnect
+                        let _ = window_clone.emit("pty-disconnect", serde_json::json!({
+                            "session_id": session_id_clone,
+                            "error": "Shell process has exited"
+                        }));
+                        break;
+                    }
                 }
             }
 
