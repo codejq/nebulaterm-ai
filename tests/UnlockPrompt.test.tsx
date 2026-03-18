@@ -174,4 +174,39 @@ describe('UnlockPrompt', () => {
     expect(passwordInputs).toHaveLength(1);
     expect(passwordInputs[0]).toBe(input);
   });
+
+  describe('UnlockPrompt - additional coverage', () => {
+    // Covers lines 27-34: handleKeyDown branch where key is NOT Enter — no invoke call
+    it('does not call invoke when a non-Enter key is pressed', async () => {
+      const onUnlock = vi.fn();
+      render(<UnlockPrompt onUnlock={onUnlock} />);
+
+      const input = screen.getByPlaceholderText('Enter your password');
+      fireEvent.change(input, { target: { value: 'myPassword' } });
+
+      // Press a non-Enter key (e.g. Tab)
+      fireEvent.keyDown(input, { key: 'Tab' });
+      fireEvent.keyDown(input, { key: 'Escape' });
+      fireEvent.keyDown(input, { key: 'a' });
+
+      // invoke should NOT have been called since none of the keys were Enter
+      expect(invoke).not.toHaveBeenCalled();
+      expect(onUnlock).not.toHaveBeenCalled();
+    });
+
+    // Covers the empty-password branch via Enter key (not just button click)
+    it('shows validation error when Enter is pressed with empty password', async () => {
+      const onUnlock = vi.fn();
+      render(<UnlockPrompt onUnlock={onUnlock} />);
+
+      const input = screen.getByPlaceholderText('Enter your password');
+      // Don't type anything — press Enter on empty input
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      await waitFor(() => {
+        expect(screen.getByText('Please enter your password')).toBeInTheDocument();
+      });
+      expect(invoke).not.toHaveBeenCalled();
+    });
+  });
 });

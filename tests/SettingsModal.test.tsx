@@ -273,4 +273,119 @@ describe('SettingsModal', () => {
     if (closeBtn) fireEvent.click(closeBtn);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  describe('SettingsModal - additional coverage', () => {
+    // Covers line 42: checkMasterPassword error branch (invoke rejects)
+    it('handles invoke error in checkMasterPassword without crashing', async () => {
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === 'has_master_password') return Promise.reject(new Error('DB unavailable'));
+        return Promise.resolve(undefined);
+      });
+
+      // Should render without throwing even when has_master_password fails
+      renderModal();
+
+      await waitFor(() => {
+        // Modal still renders its main content
+        expect(screen.getByText('Settings')).toBeInTheDocument();
+      });
+    });
+
+    // Covers line 270: "Set as Active Provider" button sets localSettings.activeProvider
+    it('clicking Set as Active Provider button updates active provider in saved settings', async () => {
+      (invoke as any).mockResolvedValue(false);
+      const onSave = vi.fn();
+      const settings = makeSettings({ activeProvider: 'gemini' });
+      renderModal({ onSave, settings });
+
+      // Navigate to OpenAI tab
+      fireEvent.click(screen.getByRole('button', { name: /^OpenAI$/i }));
+
+      // Find the "Set as Active Provider" row and click its inner button (the radio circle)
+      const setActiveRow = screen.getByText('Set as Active Provider').closest('div');
+      const radioBtn = setActiveRow?.querySelector('button');
+      expect(radioBtn).not.toBeNull();
+      if (radioBtn) {
+        fireEvent.click(radioBtn);
+      }
+
+      // Save and verify activeProvider is now openai
+      fireEvent.click(screen.getByText('Save Changes'));
+      await waitFor(() => {
+        expect(onSave).toHaveBeenCalledTimes(1);
+        const saved = onSave.mock.calls[0][0] as AppSettings;
+        expect(saved.activeProvider).toBe('openai');
+      });
+    });
+
+    // Covers lines 304-318: password change flow when hasMasterPassword is true
+    it('shows "Change Master Password" button and "New Master Password" label when password already set', async () => {
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === 'has_master_password') return Promise.resolve(true);
+        return Promise.resolve(undefined);
+      });
+
+      renderModal();
+      fireEvent.click(screen.getByText('Master Password'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Password Set')).toBeInTheDocument();
+      });
+
+      // Button should say "Change Master Password"
+      expect(screen.getByText('Change Master Password')).toBeInTheDocument();
+      // Label should say "New Master Password"
+      expect(screen.getByText('New Master Password')).toBeInTheDocument();
+    });
+
+    // Covers lines 304-318: successfully calling set_master_password when already has one
+    it('can change master password when one already exists', async () => {
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === 'has_master_password') return Promise.resolve(true);
+        if (cmd === 'set_master_password') return Promise.resolve(undefined);
+        return Promise.resolve(undefined);
+      });
+
+      renderModal();
+      fireEvent.click(screen.getByText('Master Password'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Change Master Password')).toBeInTheDocument();
+      });
+
+      const pwInput = screen.getByPlaceholderText('Enter password (min 8 characters)');
+      const confirmInput = screen.getByPlaceholderText('Re-enter password');
+      fireEvent.change(pwInput, { target: { value: 'newpassword99' } });
+      fireEvent.change(confirmInput, { target: { value: 'newpassword99' } });
+      fireEvent.click(screen.getByText('Change Master Password'));
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('set_master_password', { password: 'newpassword99' });
+        expect(screen.getByText(/Master password set successfully/i)).toBeInTheDocument();
+      });
+    });
+
+    // Covers handleSave when activeTab is 'security' — preserves existing activeProvider
+    it('saving on security tab preserves the existing activeProvider', async () => {
+      (invoke as any).mockResolvedValue(false);
+      const onSave = vi.fn();
+      const settings = makeSettings({ activeProvider: 'anthropic' });
+      renderModal({ onSave, settings });
+
+      // Navigate to security tab
+      fireEvent.click(screen.getByText('Master Password'));
+
+      await waitFor(() => {
+        expect(screen.getByText('No Password Set')).toBeInTheDocument();
+      });
+
+      // Save from the security tab
+      fireEvent.click(screen.getByText('Save Changes'));
+
+      expect(onSave).toHaveBeenCalledTimes(1);
+      const saved = onSave.mock.calls[0][0] as AppSettings;
+      // activeProvider should remain 'anthropic' (not 'security')
+      expect(saved.activeProvider).toBe('anthropic');
+    });
+  });
 });
