@@ -200,12 +200,20 @@ Function PageReinstall
     ${IfThen} $R0 == -1 ${|} EnableWindow $R3 0 ${|}
   !endif
   ${NSD_OnClick} $R3 PageReinstallUpdateSelection
-  ; Check the first radio button if this the first time
-  ; we enter this page or if the second button wasn't
-  ; selected the last time we were on this page
+  ; Default selection logic:
+  ;   - If user already made a choice ($ReinstallPageCheck 1 or 2), restore it
+  ;   - Same version ($R5=="2"): default to first radio (Add/Reinstall) - safe
+  ;   - Upgrade/downgrade ($R5=="1"): default to second radio (Do not uninstall)
+  ;     so that nebulaterm.db and ssh_keys are never deleted on upgrade
   ${If} $ReinstallPageCheck == 1
     SendMessage $R2 ${BM_SETCHECK} ${BST_CHECKED} 0
+  ${ElseIf} $ReinstallPageCheck == 2
+    SendMessage $R3 ${BM_SETCHECK} ${BST_CHECKED} 0
+  ${ElseIf} $R5 == "2"
+    ; Same version: first radio (Add/Reinstall) is the safe default
+    SendMessage $R2 ${BM_SETCHECK} ${BST_CHECKED} 0
   ${Else}
+    ; Upgrade or downgrade: second radio (Do not uninstall) preserves user data
     SendMessage $R3 ${BM_SETCHECK} ${BST_CHECKED} 0
   ${EndIf}
   ${NSD_SetFocus} $R2
