@@ -1027,6 +1027,123 @@ async fn delete_credential(id: String) -> Result<(), String> {
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    // 1. ConnectionParams deserializes with all optional fields missing (become None)
+    #[test]
+    fn test_connection_params_all_optionals_missing() {
+        let json = r#"{
+            "session_id": "sess-1",
+            "host": "example.com",
+            "port": 22,
+            "username": "root"
+        }"#;
+        let p: ConnectionParams = serde_json::from_str(json).expect("deserialization failed");
+        assert_eq!(p.session_id, "sess-1");
+        assert_eq!(p.host, "example.com");
+        assert_eq!(p.port, 22);
+        assert_eq!(p.username, "root");
+        assert!(p.password.is_none());
+        assert!(p.ssh_key_path.is_none());
+        assert!(p.ssh_key_content.is_none());
+        assert!(p.ssh_key_passphrase.is_none());
+    }
+
+    // 2. ConnectionParams deserializes when password is provided
+    #[test]
+    fn test_connection_params_with_password() {
+        let json = r#"{
+            "session_id": "sess-2",
+            "host": "server.local",
+            "port": 2222,
+            "username": "admin",
+            "password": "s3cr3t"
+        }"#;
+        let p: ConnectionParams = serde_json::from_str(json).expect("deserialization failed");
+        assert_eq!(p.password, Some("s3cr3t".to_string()));
+        assert!(p.ssh_key_path.is_none());
+    }
+
+    // 3. ConnectionParams deserializes when ssh_key_content is provided
+    #[test]
+    fn test_connection_params_with_ssh_key_content() {
+        let json = r#"{
+            "session_id": "sess-3",
+            "host": "ci.example.com",
+            "port": 22,
+            "username": "deploy",
+            "ssh_key_content": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+        }"#;
+        let p: ConnectionParams = serde_json::from_str(json).expect("deserialization failed");
+        assert!(p.ssh_key_content.is_some());
+        assert!(p.password.is_none());
+    }
+
+    // 4. PtyWriteParams round-trips through serde_json
+    #[test]
+    fn test_pty_write_params_round_trip() {
+        let original = PtyWriteParams {
+            session_id: "session-abc".to_string(),
+            data: "ls -la\r\n".to_string(),
+        };
+        let serialized = serde_json::to_string(&original).expect("serialization failed");
+        let deserialized: PtyWriteParams = serde_json::from_str(&serialized).expect("deserialization failed");
+        assert_eq!(deserialized.session_id, original.session_id);
+        assert_eq!(deserialized.data, original.data);
+    }
+
+    // 5. PtyResizeParams deserializes cols and rows correctly
+    #[test]
+    fn test_pty_resize_params_deserializes_cols_rows() {
+        let json = r#"{
+            "session_id": "sess-resize",
+            "cols": 132,
+            "rows": 50
+        }"#;
+        let p: PtyResizeParams = serde_json::from_str(json).expect("deserialization failed");
+        assert_eq!(p.session_id, "sess-resize");
+        assert_eq!(p.cols, 132);
+        assert_eq!(p.rows, 50);
+    }
+
+    // 6. LocalPtyParams deserializes with explicit cols/rows values
+    #[test]
+    fn test_local_pty_params_deserializes_correctly() {
+        let json = r#"{
+            "session_id": "local-1",
+            "cols": 80,
+            "rows": 24
+        }"#;
+        let p: LocalPtyParams = serde_json::from_str(json).expect("deserialization failed");
+        assert_eq!(p.session_id, "local-1");
+        assert_eq!(p.cols, 80u16);
+        assert_eq!(p.rows, 24u16);
+    }
+
+    // 7. StoreCredentialParams deserializes with all optional fields
+    #[test]
+    fn test_store_credential_params_deserializes() {
+        let json = r#"{
+            "id": "cred-xyz",
+            "name": "Production DB",
+            "username": "dbadmin",
+            "password": "pa$$w0rd",
+            "ssh_key_path": "/home/user/.ssh/id_rsa",
+            "passphrase": "keypassphrase"
+        }"#;
+        let p: StoreCredentialParams = serde_json::from_str(json).expect("deserialization failed");
+        assert_eq!(p.id, "cred-xyz");
+        assert_eq!(p.name, "Production DB");
+        assert_eq!(p.username, Some("dbadmin".to_string()));
+        assert_eq!(p.password, Some("pa$$w0rd".to_string()));
+        assert_eq!(p.ssh_key_path, Some("/home/user/.ssh/id_rsa".to_string()));
+        assert_eq!(p.passphrase, Some("keypassphrase".to_string()));
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![

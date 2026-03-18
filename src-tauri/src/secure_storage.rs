@@ -438,4 +438,158 @@ mod tests {
         // Different salts should produce different keys
         assert_ne!(key1, key2);
     }
+
+    // ---- New tests (Phase 8) ----
+
+    fn create_unlocked_test_db() -> (TempDir, SecureDatabase) {
+        let (temp_dir, mut db) = create_test_db();
+        db.set_master_password("phase8_password").unwrap();
+        (temp_dir, db)
+    }
+
+    #[test]
+    fn test_store_credential_succeeds_when_unlocked() {
+        let (_temp_dir, db) = create_unlocked_test_db();
+        let result = db.store_credential("cred-1", "My Server", Some("user1"), Some("pass1"), None, None);
+        assert!(result.is_ok(), "store_credential should succeed when DB is unlocked");
+    }
+
+    #[test]
+    fn test_get_credential_retrieves_stored_credential() {
+        let (_temp_dir, db) = create_unlocked_test_db();
+        db.store_credential("cred-2", "Test Host", Some("alice"), Some("secret"), None, None).unwrap();
+        let result = db.get_credential("cred-2");
+        assert!(result.is_ok(), "get_credential should return Ok for an existing id");
+    }
+
+    #[test]
+    fn test_get_credential_returns_correct_fields() {
+        let (_temp_dir, db) = create_unlocked_test_db();
+        db.store_credential("cred-3", "prod-server", Some("bob"), Some("hunter2"), Some("/home/bob/.ssh/id_rsa"), None).unwrap();
+
+        let stored = db.get_credential("cred-3").unwrap();
+        assert_eq!(stored.name, "prod-server");
+        assert_eq!(stored.username, Some("bob".to_string()));
+        assert!(stored.ssh_key_path == Some("/home/bob/.ssh/id_rsa".to_string()));
+
+        // Password is stored encrypted; decrypt_password should give back original
+        let plain = db.decrypt_password(stored.password_encrypted).unwrap();
+        assert_eq!(plain, Some("hunter2".to_string()));
+    }
+
+    #[test]
+    fn test_store_credential_with_none_password_stores_null() {
+        let (_temp_dir, db) = create_unlocked_test_db();
+        db.store_credential("cred-4", "No-Pass Server", Some("charlie"), None, None, None).unwrap();
+
+        let stored = db.get_credential("cred-4").unwrap();
+        assert!(stored.password_encrypted.is_none(), "password_encrypted should be None when no password was provided");
+
+        let decrypted = db.decrypt_password(stored.password_encrypted).unwrap();
+        assert!(decrypted.is_none(), "decrypted password should be None");
+    }
+
+    #[test]
+    fn test_delete_credential_removes_it() {
+        let (_temp_dir, db) = create_unlocked_test_db();
+        db.store_credential("cred-5", "Deletable", Some("dave"), Some("pw"), None, None).unwrap();
+
+        // Verify it exists
+        assert!(db.get_credential("cred-5").is_ok());
+
+        // Delete it
+        db.delete_credential("cred-5").unwrap();
+
+        // Now it should not be found
+        let result = db.get_credential("cred-5");
+        assert!(result.is_err(), "get_credential should return Err after the credential is deleted");
+    }
+
+    #[test]
+    fn test_store_credential_overwrite_updates_values() {
+        let (_temp_dir, db) = create_unlocked_test_db();
+
+        // Store initial value
+        db.store_credential("cred-6", "OldName", Some("olduser"), Some("oldpass"), None, None).unwrap();
+
+        // Overwrite with new values using same id
+        db.store_credential("cred-6", "NewName", Some("newuser"), Some("newpass"), None, None).unwrap();
+
+        let stored = db.get_credential("cred-6").unwrap();
+        assert_eq!(stored.name, "NewName");
+        assert_eq!(stored.username, Some("newuser".to_string()));
+
+        let plain = db.decrypt_password(stored.password_encrypted).unwrap();
+        assert_eq!(plain, Some("newpass".to_string()));
+    }
+
+    #[test]
+    fn test_store_credential_fails_when_not_unlocked() {
+        let (_temp_dir, db) = create_test_db();
+        // DB has no encryption key — no set_master_password called
+        let result = db.store_credential("cred-7", "Server", Some("user"), Some("pass"), None, None);
+        assert!(result.is_err(), "store_credential should fail when DB is not unlocked");
+    }
+
+    #[test]
+    fn test_is_unlocked_returns_false_before_unlock() {
+        let (_temp_dir, db) = create_test_db();
+        assert!(!db.is_unlocked(), "is_unlocked should be false on a freshly-initialised DB");
+    }
+
+    #[test]
+    fn test_is_unlocked_returns_true_after_set_master_password() {
+        let (_temp_dir, mut db) = create_test_db();
+        // set_master_password also sets the encryption key (auto-unlocks)
+        db.set_master_password("my_master_pw").unwrap();
+        assert!(db.is_unlocked(), "is_unlocked should return true after set_master_password");
+    }
+
+    #[test]
+    fn test_encrypt_same_plaintext_produces_different_ciphertext() {
+        let (_temp_dir, mut db) = create_test_db();
+        db.set_master_password("nonce_test_pw").unwrap();
+
+        let plaintext = "identical plaintext for nonce test";
+        let c1 = db.encrypt(plaintext).unwrap();
+        let c2 = db.encrypt(plaintext).unwrap();
+
+        // Two encryptions of the same data must differ due to random nonce
+        assert_ne!(c1, c2, "Two encryptions of the same plaintext should produce different ciphertexts (random nonce)");
+
+        // Both should still decrypt to the original plaintext
+        assert_eq!(db.decrypt(&c1).unwrap(), plaintext);
+        assert_eq!(db.decrypt(&c2).unwrap(), plaintext);
+    }
+
+    #[test]
+    fn test_set_master_password_then_unlock_with_correct_password() {
+        let (_temp_dir, mut db) = create_test_db();
+        db.set_master_password("correct_horse").unwrap();
+
+        // Simulate a fresh load: create another DB instance on the same file by
+        // re-using the same connection — we reset the key to simulate a locked state.
+        // The simplest way: open a new DB on the same path and unlock it.
+        // We test the unlock() method directly on the same instance after clearing the key.
+        // Reset encryption key to simulate locked state
+        db.encryption_key = None;
+        assert!(!db.is_unlocked());
+
+        let result = db.unlock("correct_horse");
+        assert!(result.is_ok(), "unlock with the correct password should succeed");
+        assert!(db.is_unlocked(), "DB should be unlocked after successful unlock()");
+    }
+
+    #[test]
+    fn test_unlock_with_wrong_password_returns_err() {
+        let (_temp_dir, mut db) = create_test_db();
+        db.set_master_password("right_password").unwrap();
+
+        // Reset encryption key
+        db.encryption_key = None;
+
+        let result = db.unlock("wrong_password");
+        assert!(result.is_err(), "unlock with wrong password should return Err");
+        assert!(!db.is_unlocked(), "DB should remain locked after failed unlock attempt");
+    }
 }
