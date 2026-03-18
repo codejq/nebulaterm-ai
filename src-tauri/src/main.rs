@@ -12,7 +12,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use tauri::WebviewWindow;
+use tauri::{WebviewWindow, Emitter};
 use std::thread;
 use std::time::Duration;
 
