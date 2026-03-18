@@ -22,7 +22,7 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiResponses, setAiResponses] = useState<string[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<AIProviderId>(settings.activeProvider);
-  const [keepAliveEnabled, setKeepAliveEnabled] = useState(false);
+  const [keepAliveEnabled, setKeepAliveEnabled] = useState(true);
   const keepAliveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const terminalRef = useRef<HTMLDivElement>(null);

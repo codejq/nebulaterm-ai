@@ -353,6 +353,9 @@ async fn pty_connect(params: ConnectionParams, window: Window) -> Result<String,
     let window_clone = window.clone();
     thread::spawn(move || {
         let mut buffer = vec![0u8; 32768]; // Even larger buffer (32KB)
+        let mut last_keepalive = std::time::Instant::now();
+        let keepalive_interval = Duration::from_secs(30);
+
         loop {
             // Check if session still exists and get Arc clone with minimal lock time
             let pty_session_arc = {
@@ -363,6 +366,18 @@ async fn pty_connect(params: ConnectionParams, window: Window) -> Result<String,
                     break;
                 }
             };
+
+            // Automatically send SSH keepalive every 30 seconds to prevent idle disconnects
+            if last_keepalive.elapsed() >= keepalive_interval {
+                let mut pty = pty_session_arc.lock();
+                if let PtySessionType::Ssh { session, .. } = &mut pty.session_type {
+                    session.set_blocking(true);
+                    let _ = session.keepalive_send();
+                    session.set_blocking(false);
+                    println!("[DEBUG] Auto keepalive sent for session: {}", session_id_clone);
+                }
+                last_keepalive = std::time::Instant::now();
+            }
 
             // Check if channel is at EOF BEFORE trying to read
             {
