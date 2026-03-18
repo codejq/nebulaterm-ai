@@ -12,7 +12,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use tauri::Window;
+use tauri::WebviewWindow;
 use std::thread;
 use std::time::Duration;
 
@@ -74,7 +74,7 @@ struct PtyResizeParams {
 }
 
 // Native SSH Connection (uses system ssh command)
-async fn connect_with_native_ssh(params: ConnectionParams, window: Window) -> Result<String, String> {
+async fn connect_with_native_ssh(params: ConnectionParams, window: WebviewWindow) -> Result<String, String> {
     let key_path = params.ssh_key_path.as_ref().unwrap();
 
     // Build SSH command
@@ -206,7 +206,7 @@ async fn connect_with_native_ssh(params: ConnectionParams, window: Window) -> Re
 }
 
 #[tauri::command]
-async fn pty_connect(params: ConnectionParams, window: Window) -> Result<String, String> {
+async fn pty_connect(params: ConnectionParams, window: WebviewWindow) -> Result<String, String> {
     let tcp = TcpStream::connect(format!("{}:{}", params.host, params.port))
         .map_err(|e| format!("Failed to connect to {}:{} - {}", params.host, params.port, e))?;
 
@@ -507,7 +507,7 @@ struct LocalPtyParams {
 
 // Cross-platform local PTY implementation using portable-pty
 #[tauri::command]
-async fn pty_connect_local(params: LocalPtyParams, window: Window) -> Result<String, String> {
+async fn pty_connect_local(params: LocalPtyParams, window: WebviewWindow) -> Result<String, String> {
     let pty_system = native_pty_system();
 
     let pty_pair = pty_system

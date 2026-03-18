@@ -8,7 +8,7 @@ import UnlockPrompt from './components/UnlockPrompt';
 import TabBar from './components/TabBar';
 import { Server, SSHKey, AppSettings, Session } from './types';
 import { Terminal as TerminalIcon } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 function App() {
   const [isDbLocked, setIsDbLocked] = useState(false);

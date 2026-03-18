@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SSHKey } from '../types';
 import { X, Key, Plus, Trash2, Check, ShieldCheck } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 interface SSHKeyManagerProps {
   isOpen: boolean;

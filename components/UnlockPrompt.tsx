@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Lock, AlertCircle } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 interface UnlockPromptProps {
   onUnlock: () => void;

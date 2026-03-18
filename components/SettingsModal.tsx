@@ -2,7 +2,7 @@
 import React from 'react';
 import { AppSettings, AIProviderId } from '../types';
 import { X, Settings, Cpu, Globe, Key, Lock, Shield } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 
 interface SettingsModalProps {
   isOpen: boolean;

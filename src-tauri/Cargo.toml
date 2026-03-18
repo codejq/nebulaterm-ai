@@ -1,15 +1,15 @@
 [package]
 name = "nebulaterm-ai"
-version = "1.0.18"
+version = "1.0.19"
 description = "NebulaTerm AI"
 authors = ["you"]
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = ["shell-open"] }
+tauri = { version = "2", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ssh2 = "0.9"
@@ -39,8 +39,3 @@ windows = { version = "0.58", features = [
 
 [dev-dependencies]
 tempfile = "3.8"
-
-[features]
-# this feature is used for production builds or when `devPath` points to the filesystem
-# DO NOT REMOVE!!
-custom-protocol = ["tauri/custom-protocol"]

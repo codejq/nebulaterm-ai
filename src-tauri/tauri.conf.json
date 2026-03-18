@@ -1,43 +1,16 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NebulaTerm-AI",
+  "version": "1.0.19",
+  "identifier": "com.nebulaterm.ai",
   "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "",
-    "devPath": "http://localhost:1420",
-    "distDir": "../dist",
-    "withGlobalTauri": true
+    "beforeBuildCommand": ""
   },
-  "package": {
-    "productName": "NebulaTerm-AI",
-    "version": "1.0.18"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false,
-      "shell": {
-        "all": false,
-        "open": true
-      }
-    },
-    "bundle": {
-      "active": true,
-      "targets": ["deb", "rpm", "appimage", "msi", "nsis", "dmg"],
-      "identifier": "com.nebulaterm.ai",
-      "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.icns",
-        "icons/icon.ico"
-      ],
-      "windows": {
-        "nsis": {
-          "template": "nsis/installer.nsi"
-        }
-      }
-    },
-    "security": {
-      "csp": null
-    },
+  "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "fullscreen": false,
@@ -48,6 +21,25 @@
         "decorations": true,
         "transparent": false
       }
-    ]
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "rpm", "appimage", "msi", "nsis", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "template": "nsis/installer.nsi"
+      }
+    }
   }
 }

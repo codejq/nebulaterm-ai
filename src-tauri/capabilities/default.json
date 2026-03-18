@@ -1,0 +1,8 @@
+{
+  "identifier": "default",
+  "description": "Default capability for NebulaTerm-AI",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

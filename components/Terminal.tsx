@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ConnectionStatus, Server, SSHKey, AppSettings, AIProviderId } from '../types';
 import { askAI, autoCorrectAI } from '../services/aiService';
 import { Sparkles, Send, Wifi, WifiOff, RotateCcw, Play, HeartPulse } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
