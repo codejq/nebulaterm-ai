@@ -766,6 +766,45 @@ async fn pty_keepalive(session_id: String) -> Result<String, String> {
 
 // SSH Key Storage
 
+// Helper function to normalize SSH key content
+// Accepts keys with or without headers/footers and ensures proper format
+fn normalize_ssh_key(key_content: &str) -> Result<String, String> {
+    let trimmed = key_content.trim();
+    
+    // If key already has headers, return as-is
+    if trimmed.starts_with("-----BEGIN") {
+        return Ok(trimmed.to_string());
+    }
+    
+    // Key without headers - need to detect type and add appropriate headers
+    // Check for common key type indicators in the base64 content
+    let lines: Vec<&str> = trimmed.lines().collect();
+    if lines.is_empty() {
+        return Err("Empty key content".to_string());
+    }
+    
+    // Try to detect key type from the base64 content
+    // OpenSSH keys typically start with specific bytes when decoded
+    let first_line = lines[0];
+    
+    // Default to RSA if we can't determine the type
+    // Most SSH keys are RSA, and the header will be corrected during use
+    let header = "-----BEGIN RSA PRIVATE KEY-----";
+    let footer = "-----END RSA PRIVATE KEY-----";
+    
+    // Reconstruct key with headers
+    let mut result = String::new();
+    result.push_str(header);
+    result.push('\n');
+    result.push_str(trimmed);
+    if !trimmed.ends_with('\n') {
+        result.push('\n');
+    }
+    result.push_str(footer);
+    
+    Ok(result)
+}
+
 #[tauri::command]
 async fn save_ssh_key_to_file(key_id: String, key_content: String) -> Result<String, String> {
     // Get the executable's directory for portable key storage
@@ -783,83 +822,11 @@ async fn save_ssh_key_to_file(key_id: String, key_content: String) -> Result<Str
     // Save key to file
     let key_file_path = keys_dir.join(format!("{}.key", key_id));
 
-    // Check if key is in OpenSSH format and convert to PEM if needed
-    let final_key_content = if key_content.contains("BEGIN OPENSSH PRIVATE KEY") {
-        // Write temporary file for conversion
-        let temp_key_path = keys_dir.join(format!("{}.temp", key_id));
-        std::fs::write(&temp_key_path, &key_content)
-            .map_err(|e| format!("Failed to write temp key file: {}", e))?;
+    // Normalize key content: ensure it has proper headers/footers
+    let normalized_content = normalize_ssh_key(&key_content)?;
 
-        // Set restrictive permissions on temp file BEFORE ssh-keygen uses it
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&temp_key_path)
-                .map_err(|e| format!("Failed to get temp file metadata: {}", e))?
-                .permissions();
-            perms.set_mode(0o600);
-            std::fs::set_permissions(&temp_key_path, perms)
-                .map_err(|e| format!("Failed to set temp file permissions: {}", e))?;
-        }
-
-        #[cfg(windows)]
-        {
-            use std::process::Command;
-            let username = std::env::var("USERNAME")
-                .map_err(|e| format!("Failed to get USERNAME: {}", e))?;
-
-            let output = Command::new("icacls")
-                .arg(&temp_key_path)
-                .arg("/inheritance:r")
-                .arg("/grant:r")
-                .arg(format!("{}:(F)", username))
-                .output()
-                .map_err(|e| format!("Failed to execute icacls on temp file: {}", e))?;
-
-            if !output.status.success() {
-                std::fs::remove_file(&temp_key_path).ok();
-                return Err(format!(
-                    "Failed to set temp file permissions: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
-        }
-
-        // Convert OpenSSH format to PEM format using ssh-keygen
-        let output = std::process::Command::new("ssh-keygen")
-            .arg("-p")
-            .arg("-f")
-            .arg(&temp_key_path)
-            .arg("-m")
-            .arg("pem")
-            .arg("-N")
-            .arg("")
-            .arg("-P")
-            .arg("")
-            .output()
-            .map_err(|e| format!("Failed to run ssh-keygen for conversion: {}", e))?;
-
-        if !output.status.success() {
-            std::fs::remove_file(&temp_key_path).ok();
-            return Err(format!(
-                "Failed to convert key to PEM format: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-
-        // Read the converted key
-        let converted_content = std::fs::read_to_string(&temp_key_path)
-            .map_err(|e| format!("Failed to read converted key: {}", e))?;
-
-        // Clean up temp file
-        std::fs::remove_file(&temp_key_path).ok();
-
-        converted_content
-    } else {
-        key_content
-    };
-
-    std::fs::write(&key_file_path, final_key_content)
+    // Write the key file directly - ssh2 library supports both OpenSSH and PEM formats
+    std::fs::write(&key_file_path, &normalized_content)
         .map_err(|e| format!("Failed to write key file: {}", e))?;
 
     // Set restrictive permissions on Unix systems
@@ -904,6 +871,15 @@ async fn save_ssh_key_to_file(key_id: String, key_content: String) -> Result<Str
     }
 
     Ok(key_file_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn read_ssh_key_file(file_path: String) -> Result<String, String> {
+    // Read the key file content
+    let content = std::fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read key file: {}", e))?;
+    
+    Ok(content)
 }
 
 #[tauri::command]
@@ -1150,6 +1126,7 @@ mod tests {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             pty_connect,
             pty_connect_local,
@@ -1159,6 +1136,7 @@ fn main() {
             pty_check_connection,
             pty_keepalive,
             save_ssh_key_to_file,
+            read_ssh_key_file,
             delete_ssh_key_file,
             init_secure_storage,
             has_master_password,

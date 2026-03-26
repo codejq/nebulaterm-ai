@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { SSHKey } from '../types';
-import { X, Key, Plus, Trash2, Check, ShieldCheck } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import React, { useState } from "react";
+import { SSHKey } from "../types";
+import { X, Key, Plus, Trash2, Check, ShieldCheck, Upload } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface SSHKeyManagerProps {
   isOpen: boolean;
@@ -11,15 +12,61 @@ interface SSHKeyManagerProps {
   onDeleteKey: (id: string) => void;
 }
 
-const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({ isOpen, onClose, keys, onAddKey, onDeleteKey }) => {
+const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({
+  isOpen,
+  onClose,
+  keys,
+  onAddKey,
+  onDeleteKey,
+}) => {
   const [isAdding, setIsAdding] = useState(false);
-  const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyContent, setNewKeyContent] = useState('');
-  const [newKeyPassphrase, setNewKeyPassphrase] = useState('');
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyContent, setNewKeyContent] = useState("");
+  const [newKeyPassphrase, setNewKeyPassphrase] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleBrowseFile = async () => {
+    try {
+      setIsLoadingFile(true);
+      setSaveError(null);
+
+      // Open file dialog to select SSH key file
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: "SSH Key Files",
+            extensions: ["pem", "key", "ppk", "pub", ""],
+          },
+        ],
+      });
+
+      if (selected && typeof selected === "string") {
+        // Read the file content
+        const content = await invoke<string>("read_ssh_key_file", {
+          filePath: selected,
+        });
+
+        setNewKeyContent(content);
+
+        // Auto-fill key name from filename if empty
+        if (!newKeyName) {
+          const filename = selected.split(/[\\/]/).pop() || "";
+          const nameWithoutExt = filename.replace(/\.(pem|key|ppk)$/, "");
+          setNewKeyName(nameWithoutExt);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to read key file:", error);
+      setSaveError(`Failed to read key file: ${error}`);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
 
   const handleSave = async () => {
     if (newKeyName && newKeyContent) {
@@ -29,12 +76,12 @@ const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({ isOpen, onClose, keys, on
 
       try {
         // Save key content to file using Tauri backend
-        const keyPath = await invoke<string>('save_ssh_key_to_file', {
+        const keyPath = await invoke<string>("save_ssh_key_to_file", {
           keyId: keyId,
           keyContent: newKeyContent,
         });
 
-        console.log('Key saved to:', keyPath);
+        console.log("Key saved to:", keyPath);
 
         // Add key with file path
         onAddKey({
@@ -45,13 +92,13 @@ const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({ isOpen, onClose, keys, on
           passphrase: newKeyPassphrase || undefined,
         });
 
-        setNewKeyName('');
-        setNewKeyContent('');
-        setNewKeyPassphrase('');
+        setNewKeyName("");
+        setNewKeyContent("");
+        setNewKeyPassphrase("");
         setIsAdding(false);
         setIsSaving(false);
       } catch (error) {
-        console.error('Failed to save SSH key:', error);
+        console.error("Failed to save SSH key:", error);
         setSaveError(`Failed to save SSH key: ${error}`);
         setIsSaving(false);
       }
@@ -65,32 +112,44 @@ const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({ isOpen, onClose, keys, on
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Key className="w-5 h-5 text-indigo-400" /> SSH Key Management
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="text-gray-400 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
         </div>
-        
+
         <div className="flex-1 overflow-hidden flex">
           {/* List */}
           <div className="w-1/3 border-r border-gray-800 p-2 overflow-y-auto bg-gray-900">
-             <button 
-               onClick={() => setIsAdding(true)}
-               className="w-full py-2 px-3 mb-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded flex items-center justify-center gap-2 text-sm transition"
-             >
-               <Plus className="w-4 h-4" /> Import Key
-             </button>
-             {keys.length === 0 && !isAdding && (
-               <div className="text-center text-gray-600 text-xs py-4">No keys found</div>
-             )}
-             {keys.map(k => (
-               <div key={k.id} className="group flex items-center justify-between p-2 rounded hover:bg-gray-800 mb-1 transition">
-                 <div className="flex items-center gap-2 overflow-hidden">
-                   <Key className="w-3 h-3 text-gray-500" />
-                   <span className="text-sm text-gray-300 truncate">{k.name}</span>
-                 </div>
-                 <button onClick={() => onDeleteKey(k.id)} className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition">
-                   <Trash2 className="w-3 h-3" />
-                 </button>
-               </div>
-             ))}
+            <button
+              onClick={() => setIsAdding(true)}
+              className="w-full py-2 px-3 mb-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded flex items-center justify-center gap-2 text-sm transition"
+            >
+              <Plus className="w-4 h-4" /> Import Key
+            </button>
+            {keys.length === 0 && !isAdding && (
+              <div className="text-center text-gray-600 text-xs py-4">
+                No keys found
+              </div>
+            )}
+            {keys.map((k) => (
+              <div
+                key={k.id}
+                className="group flex items-center justify-between p-2 rounded hover:bg-gray-800 mb-1 transition"
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <Key className="w-3 h-3 text-gray-500" />
+                  <span className="text-sm text-gray-300 truncate">
+                    {k.name}
+                  </span>
+                </div>
+                <button
+                  onClick={() => onDeleteKey(k.id)}
+                  className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
           </div>
 
           {/* Details / Form */}
@@ -98,24 +157,50 @@ const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({ isOpen, onClose, keys, on
             {isAdding ? (
               <div className="space-y-4">
                 <div>
-                   <label className="block text-xs font-medium text-gray-400 mb-1">Key Name</label>
-                   <input 
-                     value={newKeyName}
-                     onChange={e => setNewKeyName(e.target.value)}
-                     className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none"
-                     placeholder="e.g. AWS Production Key"
-                     autoFocus
-                   />
+                  <label className="block text-xs font-medium text-gray-400 mb-1">
+                    Key Name
+                  </label>
+                  <input
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none"
+                    placeholder="e.g. AWS Production Key"
+                    autoFocus
+                  />
                 </div>
                 <div>
-                   <label className="block text-xs font-medium text-gray-400 mb-1">Private Key (PEM/OpenSSH)</label>
-                   <textarea 
-                     value={newKeyContent}
-                     onChange={e => setNewKeyContent(e.target.value)}
-                     className="w-full h-48 bg-gray-900 border border-gray-700 rounded p-2 text-xs font-mono text-gray-300 focus:border-indigo-500 outline-none resize-none"
-                     placeholder="-----BEGIN RSA PRIVATE KEY-----..."
-                   />
-                   <p className="text-[10px] text-gray-500 mt-1">Keys are securely saved to disk and work with all formats (OpenSSH, PEM, PKCS#8).</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-gray-400">
+                      Private Key (PEM/OpenSSH)
+                    </label>
+                    <button
+                      onClick={handleBrowseFile}
+                      disabled={isLoadingFile || isSaving}
+                      className="px-2 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded text-gray-300 flex items-center gap-1 transition"
+                    >
+                      {isLoadingFile ? (
+                        <>
+                          <div className="w-2.5 h-2.5 border border-white/30 border-t-white rounded-full animate-spin"></div>
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3 h-3" /> Browse File
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <textarea
+                    value={newKeyContent}
+                    onChange={(e) => setNewKeyContent(e.target.value)}
+                    className="w-full h-48 bg-gray-900 border border-gray-700 rounded p-2 text-xs font-mono text-gray-300 focus:border-indigo-500 outline-none resize-none"
+                    placeholder="Paste key content or click 'Browse File' to select a key file..."
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Keys are securely saved to disk and work with all formats
+                    (OpenSSH, PEM, PKCS#8). Accepts keys with or without
+                    headers.
+                  </p>
                 </div>
                 {saveError && (
                   <div className="p-2 bg-red-900/20 border border-red-700/50 rounded text-red-400 text-xs">
@@ -123,14 +208,16 @@ const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({ isOpen, onClose, keys, on
                   </div>
                 )}
                 <div>
-                   <label className="block text-xs font-medium text-gray-400 mb-1">Passphrase (optional)</label>
-                   <input
-                     type="password"
-                     value={newKeyPassphrase}
-                     onChange={e => setNewKeyPassphrase(e.target.value)}
-                     className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none"
-                     placeholder="Leave empty if key has no passphrase"
-                   />
+                  <label className="block text-xs font-medium text-gray-400 mb-1">
+                    Passphrase (optional)
+                  </label>
+                  <input
+                    type="password"
+                    value={newKeyPassphrase}
+                    onChange={(e) => setNewKeyPassphrase(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-sm text-white focus:border-indigo-500 outline-none"
+                    placeholder="Leave empty if key has no passphrase"
+                  />
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
                   <button
@@ -166,7 +253,8 @@ const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({ isOpen, onClose, keys, on
                 <ShieldCheck className="w-12 h-12 mb-3 opacity-20" />
                 <p className="text-sm font-medium">Secure Key Storage</p>
                 <p className="text-xs opacity-60 mt-1 text-center max-w-[200px]">
-                  Import your private keys here to associate them with your saved servers.
+                  Import your private keys here to associate them with your
+                  saved servers.
                 </p>
               </div>
             )}
