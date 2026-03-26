@@ -935,7 +935,11 @@ async fn init_secure_storage(_app: tauri::AppHandle) -> Result<(), String> {
     let app_dir = exe_path.parent()
         .ok_or("Failed to get executable parent directory")?;
 
-    let db_path = app_dir.join("nebulaterm.db");
+    let data_dir = app_dir.join("data");
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| format!("Failed to create data directory: {}", e))?;
+
+    let db_path = data_dir.join("nebulaterm.db");
     secure_storage::init_database(db_path)?;
     Ok(())
 }

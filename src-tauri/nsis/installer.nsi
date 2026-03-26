@@ -167,7 +167,7 @@ Function PageReinstall
   ${ElseIf} $R0 == 1
     StrCpy $R1 "$(olderOrUnknownVersionInstalled)"
     StrCpy $R2 "$(uninstallBeforeInstalling)"
-    StrCpy $R3 "$(dontUninstall)"
+    StrCpy $R3 "$(updateCurrentInstallation)"
     !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$(choowHowToInstall)"
     StrCpy $R5 "1"
   ; Downgrading
@@ -175,7 +175,7 @@ Function PageReinstall
     StrCpy $R1 "$(newerVersionInstalled)"
     StrCpy $R2 "$(uninstallBeforeInstalling)"
     !if "${ALLOWDOWNGRADES}" == "true"
-      StrCpy $R3 "$(dontUninstall)"
+      StrCpy $R3 "$(updateCurrentInstallation)"
     !else
       StrCpy $R3 "$(dontUninstallDowngrade)"
     !endif
@@ -203,8 +203,8 @@ Function PageReinstall
   ; Default selection logic:
   ;   - If user already made a choice ($ReinstallPageCheck 1 or 2), restore it
   ;   - Same version ($R5=="2"): default to first radio (Add/Reinstall) - safe
-  ;   - Upgrade/downgrade ($R5=="1"): default to second radio (Do not uninstall)
-  ;     so that nebulaterm.db and ssh_keys are never deleted on upgrade
+  ;   - Upgrade/downgrade ($R5=="1"): default to second radio (Update Current Installation)
+  ;     so that data folder (nebulaterm.db) and ssh_keys are never deleted on upgrade
   ${If} $ReinstallPageCheck == 1
     SendMessage $R2 ${BM_SETCHECK} ${BST_CHECKED} 0
   ${ElseIf} $ReinstallPageCheck == 2
@@ -323,6 +323,8 @@ FunctionEnd
 {{#each language_files}}
   !include "{{this}}"
 {{/each}}
+; Custom language string for update option
+LangString updateCurrentInstallation ${LANG_ENGLISH} "Update current installation (keep user data)"
 !macro SetContext
   !if "${INSTALLMODE}" == "currentUser"
     SetShellVarContext current
@@ -599,6 +601,8 @@ Section Uninstall
   {{#each resources_ancestors}}
   RMDir /REBOOTOK "$INSTDIR\\{{this}}"
   {{/each}}
+  ; Preserve data folder (contains nebulaterm.db) and ssh_keys folder during uninstall
+  ; These will only be removed if user checks "Delete app data" checkbox
   RMDir "$INSTDIR"
   !insertmacro DeleteAppUserModelId
   !insertmacro UnpinShortcut "$SMPROGRAMS\$AppStartMenuFolder\${MAINBINARYNAME}.lnk"
