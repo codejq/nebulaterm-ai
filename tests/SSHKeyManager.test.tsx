@@ -72,7 +72,7 @@ describe('SSHKeyManager', () => {
     render(<SSHKeyManager {...defaultProps} />);
     fireEvent.click(screen.getByText('Import Key'));
     expect(screen.getByPlaceholderText('e.g. AWS Production Key')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('-----BEGIN RSA PRIVATE KEY-----...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Paste key content or click 'Browse File' to select a key file...")).toBeInTheDocument();
   });
 
   // 7. Save button disabled when name or key content is empty
@@ -94,7 +94,7 @@ describe('SSHKeyManager', () => {
     fireEvent.change(screen.getByPlaceholderText('e.g. AWS Production Key'), {
       target: { value: '' },
     });
-    fireEvent.change(screen.getByPlaceholderText('-----BEGIN RSA PRIVATE KEY-----...'), {
+    fireEvent.change(screen.getByPlaceholderText("Paste key content or click 'Browse File' to select a key file..."), {
       target: { value: '-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----' },
     });
     expect(saveButton).toBeDisabled();
@@ -111,7 +111,7 @@ describe('SSHKeyManager', () => {
       target: { value: 'Test Key' },
     });
     const keyContent = '-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----';
-    fireEvent.change(screen.getByPlaceholderText('-----BEGIN RSA PRIVATE KEY-----...'), {
+    fireEvent.change(screen.getByPlaceholderText("Paste key content or click 'Browse File' to select a key file..."), {
       target: { value: keyContent },
     });
 
@@ -139,7 +139,7 @@ describe('SSHKeyManager', () => {
     fireEvent.change(screen.getByPlaceholderText('e.g. AWS Production Key'), {
       target: { value: 'My SSH Key' },
     });
-    fireEvent.change(screen.getByPlaceholderText('-----BEGIN RSA PRIVATE KEY-----...'), {
+    fireEvent.change(screen.getByPlaceholderText("Paste key content or click 'Browse File' to select a key file..."), {
       target: { value: '-----BEGIN RSA PRIVATE KEY-----\ncontent\n-----END RSA PRIVATE KEY-----' },
     });
 
@@ -165,7 +165,7 @@ describe('SSHKeyManager', () => {
     fireEvent.change(screen.getByPlaceholderText('e.g. AWS Production Key'), {
       target: { value: 'Key With Passphrase' },
     });
-    fireEvent.change(screen.getByPlaceholderText('-----BEGIN RSA PRIVATE KEY-----...'), {
+    fireEvent.change(screen.getByPlaceholderText("Paste key content or click 'Browse File' to select a key file..."), {
       target: { value: '-----BEGIN RSA PRIVATE KEY-----\ncontent\n-----END RSA PRIVATE KEY-----' },
     });
     fireEvent.change(screen.getByPlaceholderText('Leave empty if key has no passphrase'), {
@@ -191,7 +191,7 @@ describe('SSHKeyManager', () => {
     fireEvent.change(screen.getByPlaceholderText('e.g. AWS Production Key'), {
       target: { value: 'Key No Passphrase' },
     });
-    fireEvent.change(screen.getByPlaceholderText('-----BEGIN RSA PRIVATE KEY-----...'), {
+    fireEvent.change(screen.getByPlaceholderText("Paste key content or click 'Browse File' to select a key file..."), {
       target: { value: '-----BEGIN RSA PRIVATE KEY-----\ncontent\n-----END RSA PRIVATE KEY-----' },
     });
     // Leave passphrase field empty
@@ -215,7 +215,7 @@ describe('SSHKeyManager', () => {
     fireEvent.change(screen.getByPlaceholderText('e.g. AWS Production Key'), {
       target: { value: 'Error Key' },
     });
-    fireEvent.change(screen.getByPlaceholderText('-----BEGIN RSA PRIVATE KEY-----...'), {
+    fireEvent.change(screen.getByPlaceholderText("Paste key content or click 'Browse File' to select a key file..."), {
       target: { value: '-----BEGIN RSA PRIVATE KEY-----\ncontent\n-----END RSA PRIVATE KEY-----' },
     });
 
@@ -237,7 +237,7 @@ describe('SSHKeyManager', () => {
     fireEvent.change(screen.getByPlaceholderText('e.g. AWS Production Key'), {
       target: { value: 'Error Key' },
     });
-    fireEvent.change(screen.getByPlaceholderText('-----BEGIN RSA PRIVATE KEY-----...'), {
+    fireEvent.change(screen.getByPlaceholderText("Paste key content or click 'Browse File' to select a key file..."), {
       target: { value: '-----BEGIN RSA PRIVATE KEY-----\ncontent\n-----END RSA PRIVATE KEY-----' },
     });
     fireEvent.click(screen.getByRole('button', { name: /save key/i }));
@@ -267,7 +267,7 @@ describe('SSHKeyManager', () => {
     fireEvent.change(screen.getByPlaceholderText('e.g. AWS Production Key'), {
       target: { value: 'Loading Key' },
     });
-    fireEvent.change(screen.getByPlaceholderText('-----BEGIN RSA PRIVATE KEY-----...'), {
+    fireEvent.change(screen.getByPlaceholderText("Paste key content or click 'Browse File' to select a key file..."), {
       target: { value: '-----BEGIN RSA PRIVATE KEY-----\ncontent\n-----END RSA PRIVATE KEY-----' },
     });
 

@@ -162,23 +162,24 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
     };
   }, []);
 
-  // Listen for PTY output
+  // Subscribe before starting a connection so a fast native disconnect cannot be missed.
+  // Refs intentionally identify the current session without re-subscribing per session.
   useEffect(() => {
-    if (!sessionId) return;
-
     const unlistenOutput = listen('pty-output', (event: any) => {
       const payload = event.payload;
-      if (payload.session_id === sessionId && xtermRef.current) {
+      if (payload.session_id === sessionIdRef.current && xtermRef.current) {
         xtermRef.current.write(payload.data);
       }
     });
 
     const unlistenDisconnect = listen('pty-disconnect', (event: any) => {
       const payload = event.payload;
-      if (payload.session_id === sessionId) {
+      if (payload.session_id === sessionIdRef.current) {
         // Clean up backend session
-        invoke('pty_disconnect', { sessionId }).catch(() => {});
+        invoke('pty_disconnect', { sessionId: payload.session_id }).catch(() => {});
         // Reset state so user can reconnect
+        sessionIdRef.current = null;
+        statusRef.current = ConnectionStatus.DISCONNECTED;
         setStatus(ConnectionStatus.DISCONNECTED);
         setSessionId(null);
         isConnectingRef.current = false;
@@ -193,7 +194,7 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
       unlistenOutput.then((fn) => fn());
       unlistenDisconnect.then((fn) => fn());
     };
-  }, [sessionId]);
+  }, []);
 
   // Handle SSH connection
   useEffect(() => {
@@ -209,8 +210,11 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
     // Mark as connecting immediately
     isConnectingRef.current = true;
 
+    let cancelled = false;
+
     const connectToServer = async () => {
       setStatus(ConnectionStatus.CONNECTING);
+      statusRef.current = ConnectionStatus.CONNECTING;
 
       if (xtermRef.current) {
         if (server.isLocal) {
@@ -223,6 +227,7 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
       try {
         const newSessionId = crypto.randomUUID();
         console.log('Setting session ID:', newSessionId);
+        sessionIdRef.current = newSessionId;
         setSessionId(newSessionId);
 
         if (server.isLocal) {
@@ -272,6 +277,14 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
           }
         }
 
+        if (cancelled) {
+          invoke('pty_disconnect', { sessionId: newSessionId }).catch(() => {});
+          return;
+        }
+
+        statusRef.current = ConnectionStatus.CONNECTED;
+        isConnectingRef.current = false;
+
         // Fit and resize PTY after connection
         if (fitAddonRef.current && xtermRef.current) {
           try {
@@ -288,8 +301,12 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
           }
         }
       } catch (error) {
+        if (cancelled) return;
         console.error('Connection error:', error);
+        statusRef.current = ConnectionStatus.ERROR;
         setStatus(ConnectionStatus.ERROR);
+        setSessionId(null);
+        sessionIdRef.current = null;
         isConnectingRef.current = false;
         if (xtermRef.current) {
           xtermRef.current.writeln(`\x1b[31m✗ Connection failed: ${error}\x1b[0m`);
@@ -300,9 +317,14 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
     connectToServer();
 
     return () => {
-      if (status === ConnectionStatus.CONNECTED && sessionId) {
-        invoke('pty_disconnect', { sessionId }).catch(console.error);
+      cancelled = true;
+      const activeSessionId = sessionIdRef.current;
+      if (activeSessionId) {
+        invoke('pty_disconnect', { sessionId: activeSessionId }).catch(console.error);
+        sessionIdRef.current = null;
+        statusRef.current = ConnectionStatus.DISCONNECTED;
       }
+      isConnectingRef.current = false;
     };
   }, [server]); // Only run when server changes
 
@@ -397,6 +419,7 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
 
     // Reset state and trigger reconnection
     isConnectingRef.current = true;
+    statusRef.current = ConnectionStatus.CONNECTING;
     setStatus(ConnectionStatus.CONNECTING);
 
     const connectToServer = async () => {
@@ -410,6 +433,7 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
 
       try {
         const newSessionId = crypto.randomUUID();
+        sessionIdRef.current = newSessionId;
         setSessionId(newSessionId);
 
         if (server.isLocal) {
@@ -447,6 +471,9 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
           }
         }
 
+        statusRef.current = ConnectionStatus.CONNECTED;
+        isConnectingRef.current = false;
+
         // Fit and resize PTY after reconnection
         if (fitAddonRef.current && xtermRef.current) {
           try {
@@ -464,7 +491,10 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
         }
       } catch (error) {
         console.error('Reconnection error:', error);
+        statusRef.current = ConnectionStatus.ERROR;
         setStatus(ConnectionStatus.ERROR);
+        setSessionId(null);
+        sessionIdRef.current = null;
         isConnectingRef.current = false;
         if (xtermRef.current) {
           xtermRef.current.writeln(`\x1b[31m✗ Reconnection failed: ${error}\x1b[0m`);

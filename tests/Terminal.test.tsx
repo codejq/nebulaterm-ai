@@ -399,17 +399,37 @@ describe('Terminal', () => {
       unmount();
     });
 
-    // pty_disconnect should have been called
-    const disconnectCalls = (invoke as any).mock.calls.filter(
-      (call: any[]) => call[0] === 'pty_disconnect'
+    expect(invoke).toHaveBeenCalledWith('pty_disconnect', { sessionId: 'test-uuid-1234' });
+  });
+
+  it('disconnects the previous native session when the selected server changes', async () => {
+    (invoke as any).mockImplementation((cmd: string) => {
+      if (cmd === 'pty_connect') return Promise.resolve('connected');
+      return Promise.resolve(undefined);
+    });
+    (listen as any).mockImplementation(() => Promise.resolve(vi.fn()));
+
+    const { rerender } = render(
+      <Terminal server={makeServer({ id: 'srv-1' })} sshKeys={noKeys} settings={makeSettings()} />
     );
-    // It's called either in cleanup or on pty-disconnect event
-    // The cleanup function in the connection useEffect calls pty_disconnect
-    // when status === CONNECTED and sessionId is set
-    expect(disconnectCalls.length).toBeGreaterThanOrEqual(0);
-    // Note: Due to closure timing in the cleanup fn using stale `status` and `sessionId`
-    // values from when the effect was registered, this may not always fire.
-    // The listen cleanup (unlisten calls) should happen regardless.
+
+    await waitFor(() => expect(screen.getByText('CONNECTED')).toBeInTheDocument());
+    (invoke as any).mockClear();
+
+    rerender(
+      <Terminal
+        server={makeServer({ id: 'srv-2', host: '10.0.0.2', name: 'Second server' })}
+        sshKeys={noKeys}
+        settings={makeSettings()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('pty_disconnect', { sessionId: 'test-uuid-1234' });
+      expect(invoke).toHaveBeenCalledWith('pty_connect', expect.objectContaining({
+        params: expect.objectContaining({ host: '10.0.0.2' }),
+      }));
+    });
   });
 
   // Bonus: AI Assistant section heading is present

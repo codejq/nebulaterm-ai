@@ -601,8 +601,8 @@ Section Uninstall
   {{#each resources_ancestors}}
   RMDir /REBOOTOK "$INSTDIR\\{{this}}"
   {{/each}}
-  ; Preserve data folder (contains nebulaterm.db) and ssh_keys folder during uninstall
-  ; These will only be removed if user checks "Delete app data" checkbox
+  ; Preserve data folder (contains nebulaterm.db) and ssh_keys folder during
+  ; normal upgrades and uninstalls. They are only removed on an explicit choice.
   RMDir "$INSTDIR"
   !insertmacro DeleteAppUserModelId
   !insertmacro UnpinShortcut "$SMPROGRAMS\$AppStartMenuFolder\${MAINBINARYNAME}.lnk"
@@ -622,8 +622,10 @@ Section Uninstall
     DeleteRegKey HKCU "${UNINSTKEY}"
   !endif
   DeleteRegValue HKCU "${MANUPRODUCTKEY}" "Installer Language"
-  ; Delete app data
+  ; Delete actual application data only when the user explicitly selected it.
   ${If} $DeleteAppDataCheckboxState == 1
+    RmDir /r "$INSTDIR\data"
+    RmDir /r "$INSTDIR\ssh_keys"
     SetShellVarContext current
     RmDir /r "$APPDATA\${BUNDLEID}"
     RmDir /r "$LOCALAPPDATA\${BUNDLEID}"

@@ -88,6 +88,12 @@ async fn connect_with_native_ssh(params: ConnectionParams, window: WebviewWindow
         "StrictHostKeyChecking=no".to_string(),
         "-o".to_string(),
         "BatchMode=yes".to_string(),
+        "-o".to_string(),
+        "ServerAliveInterval=30".to_string(),
+        "-o".to_string(),
+        "ServerAliveCountMax=3".to_string(),
+        "-o".to_string(),
+        "TCPKeepAlive=yes".to_string(),
     ];
 
     // Create PTY
@@ -433,26 +439,6 @@ async fn pty_connect(params: ConnectionParams, window: WebviewWindow) -> Result<
 
                 if bytes_read > 0 {
                     let data = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
-
-                    // Check if output contains disconnect messages (lenient patterns)
-                    if data.contains("closed by remote host") ||
-                       data.contains("Connection closed") ||
-                       data.contains("Connection reset") {
-                        println!("[DEBUG] Detected disconnect message in libssh2 output: {}", data.trim());
-                        let _ = window_clone.emit("pty-output", serde_json::json!({
-                            "session_id": session_id_clone,
-                            "data": data
-                        }));
-                        // Give time for output to display, then emit disconnect
-                        thread::sleep(Duration::from_millis(100));
-                        let _ = window_clone.emit("pty-disconnect", serde_json::json!({
-                            "session_id": session_id_clone,
-                            "error": "Connection closed by remote host"
-                        }));
-                        println!("[DEBUG] Disconnect event emitted after detecting message");
-                        return;
-                    }
-
                     let _ = window_clone.emit("pty-output", serde_json::json!({
                         "session_id": session_id_clone,
                         "data": data
@@ -491,7 +477,7 @@ async fn pty_connect(params: ConnectionParams, window: WebviewWindow) -> Result<
             }
 
             // Sleep briefly after draining all available data
-            thread::sleep(Duration::from_micros(500));
+            thread::sleep(Duration::from_millis(10));
         }
     });
 
@@ -782,10 +768,6 @@ fn normalize_ssh_key(key_content: &str) -> Result<String, String> {
     if lines.is_empty() {
         return Err("Empty key content".to_string());
     }
-    
-    // Try to detect key type from the base64 content
-    // OpenSSH keys typically start with specific bytes when decoded
-    let first_line = lines[0];
     
     // Default to RSA if we can't determine the type
     // Most SSH keys are RSA, and the header will be corrected during use
