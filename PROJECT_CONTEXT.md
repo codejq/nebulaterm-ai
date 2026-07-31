@@ -130,9 +130,9 @@ Important current limitation: the secure-store implementation is not wired into 
 
 ## Configuration, bundles, and releases
 
-- `src-tauri/tauri.conf.json` defines product name `NebulaTerm-AI`, identifier `com.nebulaterm.ai`, and version `1.0.23`. The default window is 1200×800 and allows resizing.
+- `src-tauri/tauri.conf.json` defines product name `NebulaTerm-AI`, identifier `com.nebulaterm.ai`, and version `1.0.24`. The default window is 1200×800 and allows resizing.
 - Bundling targets are DEB, RPM, AppImage, MSI, NSIS, and DMG. The Windows NSIS installer uses `src-tauri/nsis/installer.nsi`.
-- `package.json`, Cargo, and Tauri configuration are aligned at version `1.0.23`; bump them together for a release.
+- `package.json`, Cargo, and Tauri configuration are aligned at version `1.0.24`; bump them together for a release.
 - `.github/workflows/release.yml` runs on `v*` tags, creates a GitHub release, builds on macOS, Ubuntu 22.04, and Windows, then uploads platform bundles. The workflow currently deletes `package-lock.json` before `npm install`, so it is not a lockfile-reproducible install.
 - Tauri's CSP is explicitly `null`; browser-side network calls are therefore not restricted by a configured CSP.
 

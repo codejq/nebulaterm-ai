@@ -721,6 +721,54 @@ describe('Terminal - additional coverage', () => {
     expect(screen.getByText('CONNECTED')).toBeInTheDocument();
   });
 
+  it('automatically reconnects after a transport drop such as a VPN route change', async () => {
+    vi.useFakeTimers();
+    let disconnectCallback: ((e: any) => void) | null = null;
+
+    try {
+      (invoke as any).mockImplementation((cmd: string) => {
+        if (cmd === 'pty_connect') return Promise.resolve('connected');
+        return Promise.resolve(undefined);
+      });
+      (listen as any).mockImplementation((event: string, cb: any) => {
+        if (event === 'pty-disconnect') disconnectCallback = cb;
+        return Promise.resolve(vi.fn());
+      });
+
+      render(<Terminal server={makeServer()} sshKeys={noKeys} settings={makeSettings()} />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText('CONNECTED')).toBeInTheDocument();
+      expect(disconnectCallback).not.toBeNull();
+
+      await act(async () => {
+        disconnectCallback!({
+          payload: { session_id: 'test-uuid-1234', error: 'Connection lost: transport read' },
+        });
+      });
+
+      expect(screen.getByText('DISCONNECTED')).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const connectCalls = (invoke as any).mock.calls.filter(
+        (call: any[]) => call[0] === 'pty_connect',
+      );
+      expect(connectCalls).toHaveLength(2);
+      expect(screen.getByText('CONNECTED')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // -------------------------------------------------------------------------
   // 7. Keep-alive interval: invoke('pty_keepalive') after 30 s (fake timers)
   // -------------------------------------------------------------------------

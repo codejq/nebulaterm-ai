@@ -15,9 +15,14 @@ interface TerminalProps {
   settings: AppSettings;
 }
 
+const MAX_AUTO_RECONNECT_ATTEMPTS = 5;
+const AUTO_RECONNECT_BASE_DELAY_MS = 1000;
+const AUTO_RECONNECT_MAX_DELAY_MS = 10000;
+
 const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
   const [status, setStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
   const [aiQuery, setAiQuery] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiResponses, setAiResponses] = useState<string[]>([]);
@@ -31,6 +36,57 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
   const sessionIdRef = useRef<string | null>(null);
   const statusRef = useRef<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
   const isConnectingRef = useRef<boolean>(false);
+  const serverRef = useRef<Server | null>(server);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoReconnectAttemptsRef = useRef(0);
+
+  serverRef.current = server;
+
+  const scheduleAutoReconnect = () => {
+    const currentServer = serverRef.current;
+    if (!currentServer || currentServer.isLocal || reconnectTimeoutRef.current) return;
+
+    const nextAttempt = autoReconnectAttemptsRef.current + 1;
+    if (nextAttempt > MAX_AUTO_RECONNECT_ATTEMPTS) {
+      xtermRef.current?.writeln(
+        `\x1b[31m✗ Automatic reconnect stopped after ${MAX_AUTO_RECONNECT_ATTEMPTS} attempts. Use Reconnect to try again.\x1b[0m`,
+      );
+      return;
+    }
+
+    autoReconnectAttemptsRef.current = nextAttempt;
+    const delay = Math.min(
+      AUTO_RECONNECT_BASE_DELAY_MS * (2 ** (nextAttempt - 1)),
+      AUTO_RECONNECT_MAX_DELAY_MS,
+    );
+
+    xtermRef.current?.writeln(
+      `\x1b[33m↻ Reconnecting in ${delay / 1000}s (attempt ${nextAttempt}/${MAX_AUTO_RECONNECT_ATTEMPTS})...\x1b[0m`,
+    );
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      reconnectTimeoutRef.current = null;
+      if (!sessionIdRef.current && !isConnectingRef.current) {
+        setReconnectTrigger((value) => value + 1);
+      }
+    }, delay);
+  };
+
+  // Cancel pending retries when switching servers or closing this terminal.
+  useEffect(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    autoReconnectAttemptsRef.current = 0;
+
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    };
+  }, [server?.id]);
 
   // Sync refs with state
   useEffect(() => {
@@ -185,8 +241,9 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
         isConnectingRef.current = false;
         if (xtermRef.current) {
           xtermRef.current.writeln(`\r\n\x1b[31m✗ ${payload.error}\x1b[0m`);
-          xtermRef.current.writeln(`\x1b[33m⚠ Connection lost. Press the reconnect button to reconnect.\x1b[0m`);
+          xtermRef.current.writeln(`\x1b[33m⚠ Connection lost. Automatic recovery is starting.\x1b[0m`);
         }
+        scheduleAutoReconnect();
       }
     });
 
@@ -213,12 +270,15 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
     let cancelled = false;
 
     const connectToServer = async () => {
+      const isAutomaticReconnect = autoReconnectAttemptsRef.current > 0;
       setStatus(ConnectionStatus.CONNECTING);
       statusRef.current = ConnectionStatus.CONNECTING;
 
       if (xtermRef.current) {
         if (server.isLocal) {
           xtermRef.current.writeln(`\x1b[34mStarting local terminal...\x1b[0m`);
+        } else if (isAutomaticReconnect) {
+          xtermRef.current.writeln(`\x1b[34mReconnecting to ${server.host}:${server.port}...\x1b[0m`);
         } else {
           xtermRef.current.writeln(`\x1b[34mConnecting to ${server.host}:${server.port}...\x1b[0m`);
         }
@@ -273,7 +333,10 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
           console.log('Refs after connection:', { sessionId: sessionIdRef.current, status: statusRef.current });
 
           if (xtermRef.current) {
-            xtermRef.current.writeln(`\x1b[32m✓ Connected to ${server.username}@${server.host}:${server.port}\x1b[0m`);
+            const connectionLabel = isAutomaticReconnect ? 'Reconnected' : 'Connected';
+            xtermRef.current.writeln(
+              `\x1b[32m✓ ${connectionLabel} to ${server.username}@${server.host}:${server.port}\x1b[0m`,
+            );
           }
         }
 
@@ -284,6 +347,7 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
 
         statusRef.current = ConnectionStatus.CONNECTED;
         isConnectingRef.current = false;
+        autoReconnectAttemptsRef.current = 0;
 
         // Fit and resize PTY after connection
         if (fitAddonRef.current && xtermRef.current) {
@@ -311,6 +375,9 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
         if (xtermRef.current) {
           xtermRef.current.writeln(`\x1b[31m✗ Connection failed: ${error}\x1b[0m`);
         }
+        if (autoReconnectAttemptsRef.current > 0) {
+          scheduleAutoReconnect();
+        }
       }
     };
 
@@ -326,7 +393,7 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
       }
       isConnectingRef.current = false;
     };
-  }, [server]); // Only run when server changes
+  }, [server, reconnectTrigger]);
 
   // Keep-alive interval effect
   useEffect(() => {
@@ -416,6 +483,12 @@ const Terminal: React.FC<TerminalProps> = ({ server, sshKeys, settings }) => {
   const handleReconnect = () => {
     if (!server || !xtermRef.current || isConnectingRef.current) return;
     if (status === ConnectionStatus.CONNECTED) return;
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    autoReconnectAttemptsRef.current = 0;
 
     // Reset state and trigger reconnection
     isConnectingRef.current = true;
